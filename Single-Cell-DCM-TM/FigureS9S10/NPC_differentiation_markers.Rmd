@@ -1,0 +1,1014 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+#10x Data umap and markers
+
+```{r}
+#10x data + multiome
+library(Seurat)
+library(dplyr)
+GEX_multi_SCTv5 <- readRDS(file = "/media/erlantz/Erlantz/Multiome_ATAC_GEX_NPC_Cancer/ATAC_GEX_mouse/R/Multiome_NPC_diff/GEX_multi_SCTv5_seurat_object.h5seurat")
+
+GEX_10x_SCT_d2v5 <- readRDS(file = "/media/erlantz/Erlantz/Multiome_ATAC_GEX_NPC_Cancer/ATAC_GEX_mouse/R/Multiome_NPC_diff/GEX_10x_SCT_d2v5_seurat_object.h5seurat")
+GEX_10x_SCT_d4v5 <- readRDS(file = "/media/erlantz/Erlantz/Multiome_ATAC_GEX_NPC_Cancer/ATAC_GEX_mouse/R/Multiome_NPC_diff/GEX_10x_SCT_d4v5_seurat_object.h5seurat")
+
+GEX_10x_d0 <- Read10X_h5(file = "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D0/sample_filtered_feature_bc_matrix.h5")
+GEX_10x_d0_df <- data.frame(GEX_10x_d0$`Gene Expression`)
+write.csv(GEX_10x_d0_df, "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D0/D0_10x_matrix.csv", sep = "\t")
+GEX_10x_d2 <- Read10X_h5(file = "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D2/sample_filtered_feature_bc_matrix.h5")
+GEX_10x_d4 <- Read10X_h5(file = "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D4/sample_filtered_feature_bc_matrix.h5")
+GEX_10x_d6 <- Read10X_h5(file = "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D6/sample_filtered_feature_bc_matrix.h5")
+GEX_10x_d6_df <- data.frame(GEX_10x_d6$`Gene Expression`)
+write.csv(GEX_10x_d6_df, "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D6/D6_10x_matrix.csv", sep = "\t")
+GEX_10x_d2d4_multiome <- Read10X_h5(file = "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/Multiome_10x/filtered_feature_bc_matrix.h5")
+
+NPC_diff_plate1_plate2_DCM_WG = read.csv('/media/erlantz/71DE167A75E99BB4/Pool_30_31_DNA/deepseq/240818_A00383_0709_AHLJ5WDRX2/Creyghton/Analysis_R-Py/NPC/NPC_diff_plate1_plate2_WG.csv')
+DCM_metadata = read.csv('/media/erlantz/71DE167A75E99BB4/Pool_30_31_DNA/deepseq/240818_A00383_0709_AHLJ5WDRX2/Creyghton/Analysis_R-Py/NPC/metadata_NPC_DNA_RNA_wholegene.csv')
+NPC_diff_plate1_plate2_RNA = read.csv('/media/erlantz/71DE167A75E99BB4/Pool30_31_RNA/NPC/NPC_counts.csv')
+RNA_metadata = read.csv('/media/erlantz/71DE167A75E99BB4/Pool30_31_RNA/NPC/metadata_NPC.csv')
+
+colnames(DCM_metadata)[3] = "Plate"
+DCM_metadata$X <- NULL
+DCM_metadata$DCM_BC <- paste0("X",DCM_metadata$Barcode,"_",DCM_metadata$Plate)
+rownames(DCM_metadata) = DCM_metadata$DCM_BC
+
+
+rownames(RNA_metadata) <- RNA_metadata$Sample
+rownames(NPC_diff_plate1_plate2_RNA) <- NPC_diff_plate1_plate2_RNA$X
+NPC_diff_plate1_plate2_RNA$X <- NULL
+rownames(NPC_diff_plate1_plate2_DCM_WG) <- NPC_diff_plate1_plate2_DCM_WG$Genes
+NPC_diff_plate1_plate2_DCM_WG$Genes <- NULL
+
+DCM_metadata2 = DCM_metadata
+rownames(DCM_metadata2) = DCM_metadata2$Sample
+DCM_metadata2 <- DCM_metadata2[match(colnames(NPC_diff_plate1_plate2_RNA),rownames(DCM_metadata2)),]
+rownames(DCM_metadata2) == colnames(NPC_diff_plate1_plate2_RNA)
+
+RNA_plates_seurat <- CreateSeuratObject(NPC_diff_plate1_plate2_RNA, min.features = 200, min.cells = 3, project = "RNA_plates", meta.data = DCM_metadata2) %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+
+DCM_plates_seurat <- CreateSeuratObject(NPC_diff_plate1_plate2_DCM_WG, min.features = 200, min.cells = 3, project = "DCM_plates", meta.data = DCM_metadata) %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+
+
+GEX_10x_SCT_d0v5 <- CreateSeuratObject(GEX_10x_d0$`Gene Expression`, min.features = 200, min.cells = 10, project = "sctransform_GEX_D0") %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+GEX_SCT_10x_d0v5_subset <- subset(GEX_10x_SCT_d0v5, subset = nCount_RNA < 20000 & nCount_RNA > 500 & percent.mt < 10)
+ # normalize your data and regress out effect of "percent mt" (can also remove cells yourself based on this later on)
+ GEX_SCT_10x_d0v5_subset <- SCTransform(GEX_SCT_10x_d0v5_subset, vars.to.regress = "percent.mt") %>%
+  RunPCA() %>%
+  FindNeighbors(dims = 1:15) %>% # relatively arbitrary, should look at jackstraw plots to estimate (but using SCTransform allows us to take more PCs)
+  RunUMAP(dims = 1:15) %>%
+  FindClusters(resolution = 0.2)
+ GEX_SCT_10x_d0v5_subset <- FindClusters(GEX_SCT_10x_d0v5_subset, resolution=c( 0.1, 0.2, 0.3, 0.4, 0.5))
+
+DimPlot(GEX_SCT_10x_d0v5_subset, reduction = "umap", group.by = c("SCT_snn_res.0.1","SCT_snn_res.0.2", "SCT_snn_res.0.3", "SCT_snn_res.0.4", "SCT_snn_res.0.5"))
+VlnPlot(GEX_10x_SCT_d0v5, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+GEX_10x_SCT_d6v5 <- CreateSeuratObject(GEX_10x_d6$`Gene Expression`, min.features = 200, min.cells = 10, project = "sctransform_GEX_D6") %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+GEX_10x_SCT_d6v5_subset <- subset(GEX_10x_SCT_d6v5, subset = nCount_RNA < 20000 & nCount_RNA > 500 & percent.mt < 10)
+ # normalize your data and regress out effect of "percent mt" (can also remove cells yourself based on this later on)
+ GEX_10x_SCT_d6v5_subset <- SCTransform(GEX_10x_SCT_d6v5_subset, vars.to.regress = "percent.mt") %>%
+  RunPCA() %>%
+  FindNeighbors(dims = 1:15) %>% # relatively arbitrary, should look at jackstraw plots to estimate (but using SCTransform allows us to take more PCs)
+  RunUMAP(dims = 1:15) %>%
+  FindClusters(resolution = 0.2)
+ GEX_10x_SCT_d6v5_subset <- FindClusters(GEX_10x_SCT_d6v5_subset, resolution=c( 0.1, 0.2, 0.3, 0.4, 0.5))
+
+DimPlot(GEX_10x_SCT_d6v5_subset, reduction = "umap", group.by = c("SCT_snn_res.0.1","SCT_snn_res.0.2", "SCT_snn_res.0.3", "SCT_snn_res.0.4", "SCT_snn_res.0.5"))
+VlnPlot(GEX_10x_SCT_d6v5, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+GEX_10x_SCT_d4v5 <- CreateSeuratObject(GEX_10x_d4$`Gene Expression`, min.features = 200, min.cells = 10, project = "sctransform_GEX_D4") %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+GEX_10x_SCT_d4v5_subset <- subset(GEX_10x_SCT_d4v5, subset = nCount_RNA < 20000 & nCount_RNA > 500 & percent.mt < 10)
+ # normalize your data and regress out effect of "percent mt" (can also remove cells yourself based on this later on)
+ GEX_10x_SCT_d4v5_subset <- SCTransform(GEX_10x_SCT_d4v5_subset, vars.to.regress = "percent.mt") %>%
+  RunPCA() %>%
+  FindNeighbors(dims = 1:15) %>% # relatively arbitrary, should look at jackstraw plots to estimate (but using SCTransform allows us to take more PCs)
+  RunUMAP(dims = 1:15) %>%
+  FindClusters(resolution = 0.2)
+ GEX_10x_SCT_d4v5_subset <- FindClusters(GEX_10x_SCT_d4v5_subset, resolution=c( 0.1, 0.2, 0.3, 0.4, 0.5))
+
+DimPlot(GEX_10x_SCT_d4v5_subset, reduction = "umap", group.by = c("SCT_snn_res.0.1","SCT_snn_res.0.2", "SCT_snn_res.0.3", "SCT_snn_res.0.4", "SCT_snn_res.0.5"))
+VlnPlot(GEX_10x_SCT_d6v5, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+GEX_10x_SCT_d2v5 <- CreateSeuratObject(GEX_10x_d2$`Gene Expression`, min.features = 200, min.cells = 10, project = "sctransform_GEX_D2") %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+GEX_10x_SCT_d2v5_subset <- subset(GEX_10x_SCT_d2v5, subset = nCount_RNA < 20000 & nCount_RNA > 500 & percent.mt < 10)
+ # normalize your data and regress out effect of "percent mt" (can also remove cells yourself based on this later on)
+ GEX_10x_SCT_d2v5_subset <- SCTransform(GEX_10x_SCT_d2v5_subset, vars.to.regress = "percent.mt") %>%
+  RunPCA() %>%
+  FindNeighbors(dims = 1:15) %>% # relatively arbitrary, should look at jackstraw plots to estimate (but using SCTransform allows us to take more PCs)
+  RunUMAP(dims = 1:15) %>%
+  FindClusters(resolution = 0.2)
+ GEX_10x_SCT_d2v5_subset <- FindClusters(GEX_10x_SCT_d2v5_subset, resolution=c( 0.1, 0.2, 0.3, 0.4, 0.5))
+
+DimPlot(GEX_10x_SCT_d2v5_subset, reduction = "umap", group.by = c("SCT_snn_res.0.1","SCT_snn_res.0.2", "SCT_snn_res.0.3", "SCT_snn_res.0.4", "SCT_snn_res.0.5"))
+VlnPlot(GEX_10x_SCT_d6v5, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+SaveSeuratRds(GEX_10x_SCT_d0v5, "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D0/GEX_10x_SCT_d0v5_seurat_object.h5seurat")
+SaveSeuratRds(GEX_10x_SCT_d6v5, "/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/NPC_D6/GEX_10x_SCT_d6v5_seurat_object.h5seurat")
+```
+
+#Merging seurat objects
+```{r}
+NPC_diff <- merge(GEX_SCT_10x_d0v5_subset,y = c(GEX_10x_SCT_d2v5_subset,GEX_10x_SCT_d4v5_subset,GEX_10x_SCT_d6v5_subset),add.cell.ids = c("D0_10x","D2_10x", "D4_10x", "D6_10x"), project = "NPC_diff")
+
+DefaultAssay(NPC_diff) <-"RNA"
+
+VlnPlot(NPC_diff, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), group.by = "orig.ident")
+
+NPC_diff <- NormalizeData(NPC_diff)
+NPC_diff <- FindVariableFeatures(NPC_diff,selection.method = "vst")
+NPC_diff <- ScaleData(NPC_diff)
+NPC_diff <- RunPCA(NPC_diff)
+NPC_diff <- FindNeighbors(NPC_diff, dims = 1:15, reduction = "pca")
+NPC_diff <- FindClusters(NPC_diff, resolution = c(0.1,0.2,0.3,0.4,0.5), cluster.name = c("unintegrated_clusters_0.1","unintegrated_clusters_0.2","unintegrated_clusters_0.3", "unintegrated_clusters_0.4", "unintegrated_clusters_0.5"))
+NPC_diff <- RunUMAP(NPC_diff, dims = 1:15, verbose = FALSE)
+DimPlot(NPC_diff, group.by = c("unintegrated_clusters_0.1","unintegrated_clusters_0.2","unintegrated_clusters_0.3", "unintegrated_clusters_0.4", "unintegrated_clusters_0.5","orig.ident", "seurat_clusters"))
+DimPlot(NPC_diff, reduction = "umap", group.by = c("orig.ident","unintegrated_clusters_0.2","Cell_Type2"), label.size = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/nonintegration_NPC_diffD0-6.png", width = 10, height = 3)
+
+genes_markers <- c("Slc4a4", "Slc1a3","Hes5","Ttyh1","Ndrg2","Basp1","Sox4","Ncald","Sox6","Dcx","Gria2","Birc5","Tpx2","Cenpf","Cdk1","Mki67","Dcn","Col4a2","Pcolce","Col3a1","Twist1")
+immature_neuron_markers <- c(
+  "Dcx",       # Doublecortin
+  "Tubb3",     # Beta-III Tubulin (Tuj1)
+  "Neurod1",   # Neurogenic differentiation 1
+  "Neurod2",   # Neurogenic differentiation 2
+  "Ncam1",     # Neural Cell Adhesion Molecule 1 (PSA-modified form not distinguished at gene level)
+  "Stmn2",     # Stathmin 2
+  "Ascl1",     # Achaete-scute family bHLH transcription factor 1
+  "Map2",      # Microtubule-associated protein 2
+  "Gap43",     # Growth Associated Protein 43
+  "Dlx2",      # Distal-less homeobox 2
+  "Syn1",      # Synapsin I
+  "Calb2",     # Calretinin (Calbindin 2)
+  "Prox1",     # Prospero homeobox 1
+  "Sox11",        # SRY-box transcription factor 11
+  "Tbr1" 
+)
+rgc_npc_nsc_markers <- c(
+  "Nes",       # Nestin – classic marker of NSCs and progenitors
+  "Sox2",      # SRY-box transcription factor 2 – stemness & self-renewal
+  "Pax6",      # Paired box 6 – radial glia and early neurogenic progenitors
+  "Vim",       # Vimentin – intermediate filament in RGCs
+  "Hes1",      # Hes family bHLH transcription factor 1 – Notch pathway, NSC maintenance
+  "Hes5",      # Hes family bHLH transcription factor 5 – similar role as Hes1
+  "Fabp7",     # Fatty acid binding protein 7 (BLBP) – radial glia
+  "Glast",     # Also known as Slc1a3 – glutamate transporter in radial glia
+  "Notch1",    # Receptor in Notch signaling – maintains NSC pool
+  "Emx2",      # Transcription factor important in neurogenesis
+  "Tbr2",      # Also known as Eomes – intermediate progenitor marker
+  "Cdk6",      # Cell cycle regulation – highly expressed in active progenitors
+  "Mki67",     # Proliferation marker – expressed in cycling NPCs
+  "Hopx",      # Homeodomain-only protein – quiescent radial glia
+  "Lif",       # Leukemia inhibitory factor – stem cell maintenance
+  "Id1",       # Inhibitor of DNA binding – expressed in quiescent NSCs
+  "Gli1"       # Hedgehog pathway transcription factor – NSCs in subventricular zone
+)
+suggested_check_markers <- c(
+  # Glial / Astrocyte markers
+  "Gfap", "Aqp4", "Sox9", "Aldh1l1",
+
+  # Pericyte / Vascular support markers
+  "Pdgfrb", "Cspg4", "Des", "Rgs5",
+
+  # Endothelial / Vascular markers
+  "Pecam1", "Cdh5", "Kdr", "Flt1",
+
+  # Mesenchymal / ECM-related markers
+  "Acta2", "Tagln", "Vim", "Fn1"
+)
+rgc_npc_nsc_markers_sub <- c("Sox2","Fabp7","Hes5","Id1","Notch1", "Slc1a3")
+immature_neuron_markers_sub <- c("Dcx","Map2","Ascl1","Tubb3","Gap43","Gria2","Sox6")
+neural_crest_markers <- c(
+  "Sox10", "Foxd3", "Snai1", "Snai2", "Pax3", "Tfap2a", 
+  "Ets1", "Myc", "Cdh6", "Cdh2", "Rac1", "Mitf", "Prrx1",
+  "Sox9", "Twist1", "Epha4", "Ephb1", "Ptprc", "Nestin"
+)
+FeaturePlot(NPC_diff, features = suggested_check_markers)
+FeaturePlot(NPC_diff, features = rgc_npc_nsc_markers_sub, split.by = "orig.ident")
+FeaturePlot(NPC_diff, features = immature_neuron_markers_sub, split.by = "orig.ident")
+NPC_diff <- JoinLayers(NPC_diff )
+VlnPlot(NPC_diff, group.by = "unintegrated_clusters_0.2",features = c(neural_crest_markers,immature_neuron_markers_sub))
+VlnPlot(NPC_diff, group.by = "Cell_Type",features = c("Nes","Sox2","Hes6"))
+
+FeaturePlot(NPC_diff, features = c("Nes","Hes5","Slc1a3","Gria2", "Tubb3","Dcx","Sox6","Col3a1","Fn1","Prrx1","Twist1"), split.by = "orig.ident")
+FeaturePlot(NPC_diff, features = c("Nes","Hes5","Slc1a3","Gria2", "Tubb3","Dcx","Sox6","Col3a1","Fn1","Prrx1","Twist1"), split.by = "orig.ident")&scale_colour_gradientn(colors =c( "white","lightblue", "darkred"))
+FeaturePlot(NPC_diff, features = c("Nes","Sox2","Hes6"), split.by = "orig.ident")&scale_colour_gradientn(colors =c( "white", "darkred"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/nonintegration_NPC_diffD0-6_genemarkers-selected4.png", width = 20, height = 32)
+
+
+#recode
+hex_colors4 <- c( "#003366","#990000","#00CCCC","#00CCCC", "#E41A1C","#66FFB2","#CC00CC","#FF9933","#990000", "#C0C0C0", "#E0E0E0","#C0C0C0", "#C0C0C0","#E0E0E0", "#CC9900","#C0C0C0")
+hex_colors5 <- c( "#B0B0B0", "#003366","#990000","#00CCCC","#00CCCC", "#E41A1C","#66FFB2","#003366","#FF9933","#990000", "#C0C0C0", "#E0E0E0","#C0C0C0", "#C0C0C0","#E0E0E0", "#CC9900","#C0C0C0")
+NPC_diff$Cell_Type <- recode(NPC_diff$unintegrated_clusters_0.2,  
+                                            "0" = "RGCs",
+                                            "1" = "NPCs cycling",
+                                            "2" = "NPCs",
+                                            "3" = "INs",
+                                            "4" = "Migratory_RGCs")
+NPC_diff$Cell_Type2 <- recode(NPC_diff$unintegrated_clusters_0.2,  
+                                            "0" = "RGCs",
+                                            "1" = "RGCs",
+                                            "2" = "NPCs",
+                                            "3" = "INs",
+                                            "4" = "IGs")
+
+GEX_10x_d2d4_multiome_seurat_subset$unintegrated_clusters_0.3
+
+NPC_diff$Dataset <- recode(NPC_diff$orig.ident,  
+                                            "sctransform_GEX_D0" = "D0",
+                                            "sctransform_GEX_D2" = "D2",
+                                            "sctransform_GEX_D4" = "D4",
+                                            "sctransform_GEX_D6" = "D6")
+DimPlot(subset(NPC_diff, Dataset == "D0"), reduction = "umap", split.by = "Dataset", group.by = c("Cell_Type2"), label.size = 2, cols = hex_colors4)&
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size =11, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 0, face = "bold", hjust = 1),
+    axis.title = element_text(size = 11, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    guides(fill= guide_legend(nrow = 3))
+  ) 
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/nonintegration_NPC_diffD0-6_paper2.png", width = 8, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank//figures/Integration_multi_D2_D4/celltype_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/days_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/days_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/day0_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/day2_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/day4_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/day6_umap.pdf", width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/days_clusters_umap.pdf", width = 8, height = 3)
+
+GEX_10x_d2d4_multiome_seurat_subset$Cell_Type2 <- recode(GEX_10x_d2d4_multiome_seurat_subset$unintegrated_clusters_1,  
+                                            "0" = "RGCs",
+                                            "1" = "RGCs",
+                                            "2" = "INs",
+                                            "3" = "INs",
+                                            "4" = "RGCs",  
+                                            "5" = "RGCs",
+                                            "6" = "INs",
+                                            "7" = "RGCs",
+                                            "8" = "INs",
+                                            "9" = "IGs")
+
+DimPlot(GEX_10x_d2d4_multiome_seurat_subset, reduction = "umap", group.by = c("Cell_Type2"), label.size = 2, cols = hex_colors4)&
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size =11, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 0, face = "bold", hjust = 1),
+    axis.title = element_text(size = 11, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    guides(fill= guide_legend(nrow = 3))
+  ) 
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/multi_clusters_umap.pdf", width = 4, height = 3)
+```
+# Metagene plots on low to high
+
+```{r}
+D2_pulse_off <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_off_ensembl/cluster_D2_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_off <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_off_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_off <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_off_ensembl/cluster_D4_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_off <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_off_ensembl/Pool33B_plate8_cluster_D2_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_off <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_off_ensembl/Pool33B_plate8_cluster_D4_DCM_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_0_50 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_low_median_ensembl/cluster_D2_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_0_50 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_low_median_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_0_50 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_low_median_ensembl/cluster_D4_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_0_50 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_low_median_ensembl/Pool33B_plate8_cluster_D2_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_0_50 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_low_median_ensembl/Pool33B_plate8_cluster_D4_DCM_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_50_75 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_50_75_ensembl/cluster_D2_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_50_75 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_50_75_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_50_75 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_50_75_ensembl/cluster_D4_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_50_75 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_50_75_ensembl/Pool33B_plate8_cluster_D2_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_50_75 <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_50_75_ensembl/Pool33B_plate8_cluster_D4_DCM_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_high <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_ensembl/cluster_D2_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_high <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_high <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_ensembl/cluster_D4_16h_NPC_dox_day_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_high <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_ensembl/Pool33B_plate8_cluster_D2_DCM_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_high <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/DCM/bulk_high_ensembl/Pool33B_plate8_cluster_D4_DCM_rcSite_GraphOutput.txt", sep="\t")
+
+
+D2_pulse_off$Norm_DCM <- D2_pulse_off$V2 / (294664)
+D2_pulse_0_50$Norm_DCM <- D2_pulse_0_50$V2 / (294664)
+D2_pulse_50_75$Norm_DCM <- D2_pulse_50_75$V2 / (294664)
+D2_pulse_high$Norm_DCM <- D2_pulse_high$V2 / (294664)
+
+D4_pulse_off$Norm_DCM <- D4_pulse_off$V2 / (807315)
+D4_pulse_0_50$Norm_DCM <- D4_pulse_0_50$V2 / (807315)
+D4_pulse_50_75$Norm_DCM <- D4_pulse_50_75$V2 / (807315)
+D4_pulse_high$Norm_DCM <- D4_pulse_high$V2 / (807315)
+
+Chase_pulse_off$Norm_DCM <- Chase_pulse_off$V2 / (1460465)
+Chase_pulse_0_50$Norm_DCM <- Chase_pulse_0_50$V2 / (1460465)
+Chase_pulse_50_75$Norm_DCM <- Chase_pulse_50_75$V2 / (1460465)
+Chase_pulse_high$Norm_DCM <- Chase_pulse_high$V2 / (1460465)
+
+Minus_D2_pulse_off$Norm_DCM <- Minus_D2_pulse_off$V2 / (271522)
+Minus_D2_pulse_0_50$Norm_DCM <- Minus_D2_pulse_0_50$V2 / (271522)
+Minus_D2_pulse_50_75$Norm_DCM <- Minus_D2_pulse_50_75$V2 / (271522)
+Minus_D2_pulse_high$Norm_DCM <- Minus_D2_pulse_high$V2 / (271522)
+
+Minus_D4_pulse_off$Norm_DCM <- Minus_D4_pulse_off$V2 / (272697)
+Minus_D4_pulse_0_50$Norm_DCM <- Minus_D4_pulse_0_50$V2 / (272697)
+Minus_D4_pulse_50_75$Norm_DCM <- Minus_D4_pulse_50_75$V2 / (272697)
+Minus_D4_pulse_high$Norm_DCM <- Minus_D4_pulse_high$V2 / (272697)
+
+## Merging per gene expression
+library(reshape2)
+D2_gene_diff <- data.frame(Position=D2_pulse_off$V1,
+                           Minus_dox=Minus_D2_pulse_50_75$V2,
+                           Bottom_0_50=D2_pulse_0_50$V2,
+                           Top_50_75=D2_pulse_50_75$V2,
+                           Top_25=D2_pulse_high$V2)
+D2_gene_diff_melt <- melt(D2_gene_diff, id.vars = "Position")
+D2_gene_diff_melt$variable <- factor(D2_gene_diff_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Minus_dox"))
+
+ggplot(D2_gene_diff_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("DCM Reads / Sites")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level D2",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Minus_Dox"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/D2_pulse_gene_Expression_metagene.png", dpi=300,width = 5, height = 3)
+
+Chase_gene_diff <- data.frame(Position=Chase_pulse_off$V1,
+                           Minus_dox=Minus_D2_pulse_50_75$Norm_DCM,
+                           Bottom_0_50=Chase_pulse_0_50$Norm_DCM,
+                           Top_50_75=Chase_pulse_50_75$Norm_DCM,
+                           Top_25=Chase_pulse_high$Norm_DCM)
+Chase_gene_diff_melt <- melt(Chase_gene_diff, id.vars = "Position")
+Chase_gene_diff_melt$variable <- factor(Chase_gene_diff_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Minus_dox"))
+
+ggplot(Chase_gene_diff_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("DCM Reads / Sites")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level Chase",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Minus_Dox"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/D2_chase_gene_Expression_metagene.png", dpi=300,width = 5, height = 3)
+
+##Merging per sample top 25% expressed genes
+
+Samples_diff <- data.frame(Position=Chase_pulse_off$V1,
+                           Minus_dox_D2=Minus_D2_pulse_high$Norm_DCM,
+                           Minus_dox_D4=Minus_D4_pulse_high$Norm_DCM,
+                           D2=D2_pulse_high$Norm_DCM,
+                           D4=D4_pulse_high$Norm_DCM,
+                           Chase=Chase_pulse_high$Norm_DCM)
+Samples_diff_melt <- melt(Samples_diff, id.vars = "Position")
+Samples_diff_melt$variable <- factor(Samples_diff_melt$variable, levels = c("D4","D2","Chase","Minus_dox_D4","Minus_dox_D2"))
+
+ggplot(Samples_diff_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("DCM Reads / Sites (DCM/CpG normalized)")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000","#200000"), name = "Dox Induction",
+    labels = c("D4 16h dox","D2 16h dox","D2 16h Dox 24h Chase","D4 -dox","D2 -dox"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/Sample_normalization_metagene.png", dpi=300,width = 5, height = 3)
+
+
+
+```
+
+##Metagene plots CpG
+
+```{r}
+D2_pulse_off_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_off_ensembl/cluster_D2_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_off_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_off_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_off_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_off_ensembl/cluster_D4_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_off_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_off_ensembl/Pool33B_plate8_cluster_D2_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_off_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_off_ensembl/Pool33B_plate8_cluster_D4_CpG_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_0_50_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_low_median_ensembl/cluster_D2_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_0_50_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_low_median_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_0_50_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_low_median_ensembl/cluster_D4_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_0_50_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_low_median_ensembl/Pool33B_plate8_cluster_D2_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_0_50_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_low_median_ensembl/Pool33B_plate8_cluster_D4_CpG_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_50_75_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_50_75_ensembl/cluster_D2_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_50_75_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_50_75_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_50_75_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_50_75_ensembl/cluster_D4_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_50_75_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_50_75_ensembl/Pool33B_plate8_cluster_D2_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_50_75_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_50_75_ensembl/Pool33B_plate8_cluster_D4_CpG_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_high_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_ensembl/cluster_D2_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Chase_pulse_high_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_ensembl/cluster_D2_D4_chase_16h_24h_dtag_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+D4_pulse_high_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_ensembl/cluster_D4_16h_NPC_dox_day_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D2_pulse_high_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_ensembl/Pool33B_plate8_cluster_D2_CpG_rcSite_GraphOutput.txt", sep="\t")
+Minus_D4_pulse_high_CpG <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/Analyzed-transfer_3078934_files_71c0041d-For_GeneGraphs/CpG/bulk_high_ensembl/Pool33B_plate8_cluster_D4_CpG_rcSite_GraphOutput.txt", sep="\t")
+
+D2_pulse_off_CpG$Norm_CpG <- D2_pulse_off_CpG$V2 / (3187136)*1000000
+D2_pulse_0_50_CpG$Norm_CpG <- D2_pulse_0_50_CpG$V2 / (3187136)*1000000
+D2_pulse_50_75_CpG$Norm_CpG <- D2_pulse_50_75_CpG$V2 / (3187136)*1000000
+D2_pulse_high_CpG$Norm_CpG <- D2_pulse_high_CpG$V2 / (3187136)*1000000
+
+D4_pulse_off_CpG$Norm_CpG <- D4_pulse_off_CpG$V2 / (6480764)*1000000
+D4_pulse_0_50_CpG$Norm_CpG <- D4_pulse_0_50_CpG$V2 / (6480764)*1000000
+D4_pulse_50_75_CpG$Norm_CpG <- D4_pulse_50_75_CpG$V2 / (6480764)*1000000
+D4_pulse_high_CpG$Norm_CpG <- D4_pulse_high_CpG$V2 / (6480764)*1000000
+
+Chase_pulse_off_CpG$Norm_CpG <- Chase_pulse_off_CpG$V2 / (14490898)*1000000
+Chase_pulse_0_50_CpG$Norm_CpG <- Chase_pulse_0_50_CpG$V2 / (14490898)*1000000
+Chase_pulse_50_75_CpG$Norm_CpG <- Chase_pulse_50_75_CpG$V2 / (14490898)*1000000
+Chase_pulse_high_CpG$Norm_CpG <- Chase_pulse_high_CpG$V2 / (14490898)*1000000
+
+Minus_D2_pulse_off_CpG$Norm_CpG <- Minus_D2_pulse_off_CpG$V2 / (4239676)*1000000
+Minus_D2_pulse_0_50_CpG$Norm_CpG <- Minus_D2_pulse_0_50_CpG$V2 / (4239676)*1000000
+Minus_D2_pulse_50_75_CpG$Norm_CpG <- Minus_D2_pulse_50_75_CpG$V2 / (4239676)*1000000
+Minus_D2_pulse_high_CpG$Norm_CpG <- Minus_D2_pulse_high_CpG$V2 / (4239676)*1000000
+
+Minus_D4_pulse_off_CpG$Norm_CpG <- Minus_D4_pulse_off_CpG$V2 / (4136791)*1000000
+Minus_D4_pulse_0_50_CpG$Norm_CpG <- Minus_D4_pulse_0_50_CpG$V2 / (4136791)*1000000
+Minus_D4_pulse_50_75_CpG$Norm_CpG <- Minus_D4_pulse_50_75_CpG$V2 / (4136791)*1000000
+Minus_D4_pulse_high_CpG$Norm_CpG <- Minus_D4_pulse_high_CpG$V2 / (4136791)*1000000
+
+## Merging per gene expression
+library(reshape2)
+D2_gene_diff_CpG <- data.frame(Position=D2_pulse_off_CpG$V1,
+                               Off=D2_pulse_off_CpG$V2,
+                           Bottom_0_50=D2_pulse_0_50_CpG$V2,
+                           Top_50_75=D2_pulse_50_75_CpG$V2,
+                           Top_25=D2_pulse_high_CpG$V2)
+D2_gene_diff_CpG_melt <- melt(D2_gene_diff_CpG, id.vars = "Position")
+D2_gene_diff_CpG_melt$variable <- factor(D2_gene_diff_CpG_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Off"))
+
+ggplot(D2_gene_diff_CpG_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level D2",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Off"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/D2_pulse_gene_Expression_metagene_CpG_Off.png", dpi=300,width = 5, height = 3)
+
+D4_gene_diff_CpG <- data.frame(Position=D4_pulse_off_CpG$V1,
+                               Off=D4_pulse_off_CpG$V2,
+                           Bottom_0_50=D4_pulse_0_50_CpG$V2,
+                           Top_50_75=D4_pulse_50_75_CpG$V2,
+                           Top_25=D4_pulse_high_CpG$V2)
+D4_gene_diff_CpG_melt <- melt(D4_gene_diff_CpG, id.vars = "Position")
+D4_gene_diff_CpG_melt$variable <- factor(D4_gene_diff_CpG_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Off"))
+
+ggplot(D4_gene_diff_CpG_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level D4",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Off"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/D4_pulse_gene_Expression_metagene_CpG_Off.png", dpi=300,width = 5, height = 3)
+
+Chase_gene_diff_CpG <- data.frame(Position=Chase_pulse_off_CpG$V1,
+                                  Off=Chase_pulse_off_CpG$V2,
+                           Bottom_0_50=Chase_pulse_0_50_CpG$V2,
+                           Top_50_75=Chase_pulse_50_75_CpG$V2,
+                           Top_25=Chase_pulse_high_CpG$V2)
+Chase_gene_diff_CpG_melt <- melt(Chase_gene_diff_CpG, id.vars = "Position")
+Chase_gene_diff_CpG_melt$variable <- factor(Chase_gene_diff_CpG_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Off"))
+
+ggplot(Chase_gene_diff_CpG_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level Chase",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Off"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/D2_chase_gene_Expression_metagene_CpG_off.png", dpi=300,width = 5, height = 3)
+
+Minus_gene_diff_CpG <- data.frame(Position=Chase_pulse_off_CpG$V1,
+                                  Off=Minus_D2_pulse_off_CpG$V2,
+                           Bottom_0_50=Minus_D2_pulse_0_50_CpG$V2,
+                           Top_50_75=Minus_D2_pulse_50_75_CpG$V2,
+                           Top_25=Minus_D2_pulse_high_CpG$V2)
+Minus_gene_diff_CpG_melt <- melt(Minus_gene_diff_CpG, id.vars = "Position")
+Minus_gene_diff_CpG_melt$variable <- factor(Minus_gene_diff_CpG_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Off"))
+
+ggplot(Minus_gene_diff_CpG_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000"), name = "Expression Level -dox",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Off"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/Minus_dox_gene_Expression_metagene_CpG.png", dpi=300,width = 5, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/Minus_dox_gene_Expression_metagene_CpG_off.png", dpi=300,width = 5, height = 3)
+
+##Merging per sample top 25% expressed genes
+
+Samples_diff_CpG <- data.frame(Position=Chase_pulse_off_CpG$V1,
+                           Minus_dox_D2=Minus_D2_pulse_high_CpG$V2,
+                           Minus_dox_D4=Minus_D4_pulse_high_CpG$V2,
+                           D2=D2_pulse_high_CpG$V2,
+                           D4=D4_pulse_high_CpG$V2,
+                           Chase=Chase_pulse_high_CpG$V2)
+Samples_diff_CpG_melt <- melt(Samples_diff_CpG, id.vars = "Position")
+Samples_diff_CpG_melt$variable <- factor(Samples_diff_CpG_melt$variable, levels = c("D4","D2","Chase","Minus_dox_D4","Minus_dox_D2"))
+
+ggplot(Samples_diff_CpG_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000","#200000"), name = "Dox Induction",
+    labels = c("D4 16h dox","D2 16h dox","D2 16h Dox 24h Chase","D4 -dox","D2 -dox"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/Sample_normalization_metagene.png", dpi=300,width = 5, height = 3)
+
+Samples_diff_CpG_all <- data.frame(Position=rep(c(Chase_pulse_off_CpG$V1),5),
+                           Off=c(Minus_D2_pulse_off_CpG$V2,Minus_D4_pulse_off_CpG$V2,D2_pulse_off_CpG$V2,D4_pulse_off_CpG$V2,Chase_pulse_off_CpG$V2),
+                           Bottom_0_50=c(Minus_D2_pulse_0_50_CpG$V2,Minus_D4_pulse_0_50_CpG$V2,D2_pulse_0_50_CpG$V2,D4_pulse_0_50_CpG$V2,Chase_pulse_0_50_CpG$V2),
+                           
+                           Top_50_75=c(Minus_D2_pulse_50_75_CpG$V2,Minus_D4_pulse_50_75_CpG$V2,D2_pulse_50_75_CpG$V2,D4_pulse_50_75_CpG$V2,Chase_pulse_50_75_CpG$V2),
+                           
+                           Top_25=c(Minus_D2_pulse_high_CpG$V2,Minus_D4_pulse_high_CpG$V2,D2_pulse_high_CpG$V2,D4_pulse_high_CpG$V2,Chase_pulse_high_CpG$V2))
+Samples_diff_CpG_all_melt <- melt(Samples_diff_CpG_all, id.vars = "Position")
+Samples_diff_CpG_all_melt$variable <- factor(Samples_diff_CpG_all_melt$variable, levels = c("Top_25","Top_50_75","Bottom_0_50","Off"))
+
+ggplot(Samples_diff_CpG_all_melt, aes(x = Position, y = value, color=variable)) +
+  geom_line(linewidth = 0.75) +
+  ylab("CpG Reads / Sites")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#00441B","#238B45","#A4E0D8","#000000","#200000"), name = "Dox Induction",
+    labels = c("D4 16h dox","D2 16h dox","D2 16h Dox 24h Chase","D4 -dox","D2 -dox"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+
+
+
+
+```
+
+##Metagene plots RNA
+
+
+```{r}
+RNA_metagene <- read.table("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/plus_RNA_NPC_off_rpkm.csv", sep="\t")
+
+dim(RNA_metagene)
+colnames(RNA_metagene) <- RNA_metagene[1,]
+RNA_metagene2 <- RNA_metagene[2:13,]
+
+RNA_metagene2_melted <- melt(RNA_metagene2, id.vars = c("Samples","Expression"))
+
+RNA_metagene2_melted$Expression <- factor(RNA_metagene2_melted$Expression, levels = c("Q4_>75%","Q3_50-75%","Q1_Q2_0-50%","Off"))
+RNA_metagene2_melted$variable <- as.numeric(RNA_metagene2_melted$variable)
+RNA_metagene2_melted_sub <- RNA_metagene2_melted[RNA_metagene2_melted$Expression != "Off",]
+
+RNA_metagene2_melted_D2 <- RNA_metagene2_melted[RNA_metagene2_melted$Samples == c("Plus_Dox_D2 RNA"),]
+RNA_metagene2_melted_D4 <- RNA_metagene2_melted[RNA_metagene2_melted$Samples == "Plus_Dox_D4 RNA",]
+RNA_metagene2_melted_chase <- RNA_metagene2_melted[RNA_metagene2_melted$Samples == "1D_chase_D2_D4 RNA",]
+
+ggplot(RNA_metagene2_melted_D2, aes(x = variable, y = value, color=Expression)) +
+  geom_line(linewidth = 0.75) +
+  ylab("RPKM")+
+  xlab("")+
+  labs(title="")+
+  scale_x_continuous(breaks = c(1, 100, 300, 400),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#440000","#8B2323","#E0A4A4","#000000"), name = "Expression Level D2",
+    labels = c("Top 25%", "50-75%", "Bottom 50%","Off"))+
+  #facet_wrap(~Expression)+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/gene_Expression_metagene_RNA_D2.png", dpi=300,width = 5, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/gene_Expression_metagene_RNA_D4.png", dpi=300,width = 5, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/bam_files_noDup/Metagene_plots_code/Ruben_metagenes/ggplot/gene_Expression_metagene_RNA_chase.png", dpi=300,width = 5, height = 3)
+
+
+```
+
+##Statistics
+
+```{r}
+gDNA_reads <- read.csv("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/Stats_Plates_RNA_DNA/Plates1_2_4_8_gDNA_stats.csv", sep = ",")
+gDNA_reads <- gDNA_reads[gDNA_reads$Plate != "Plate_4",]
+gDNA_reads$Dox <- gsub("16h_Dox_24h_dtag","16h_24h_dtag",gDNA_reads$Dox, fixed = F)
+gDNA_reads$Dox <- gsub("16h_dox","16h",gDNA_reads$Dox, fixed = F)
+
+gDNA_reads2 <- gDNA_reads[,5:ncol(gDNA_reads)]
+gDNA_reads3 <- gDNA_reads2[colnames(gDNA_reads2) %in% c("Dox","CpG","DCM","CpG_unique","DCM_unique")]
+gDNA_reads_melt <- melt(gDNA_reads3, id.vars = c("Dox"))
+
+gDNA_reads$Dox <- factor(gDNA_reads$Dox, levels = c("16h","16h_24h_dtag","-Dox"))
+
+
+  
+ggplot(gDNA_reads, aes(x =log10(Aligned), y =  log10(CpG_unique), color=Dox)) +
+  geom_point()+
+  geom_abline(slope = 1,             # 45-degree line (y = x)
+    intercept = 0,         # Start at origin (0,0)
+    color = "black",         # Line color
+    linetype = "dashed",   # Line style (solid/dashed/dotted)
+    linewidth = 0.5        # Line thickness
+  )+
+  scale_color_manual(values = c("#00441B","#A4E0D8","#000000"))+
+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Log10(CpG UMIs)",
+    x = "Log10(Mapped reads)")+
+  ylim(0,7)+
+  xlim(0,7)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/CpG_unique_against_aligned.png", dpi=300, width = 5, height = 3)
+ggplot(gDNA_reads, aes(x =log10(Aligned), y =  log10(DCM_unique), color=Dox)) +
+  geom_point()+
+geom_abline(slope = 1,             # 45-degree line (y = x)
+    intercept = 0,         # Start at origin (0,0)
+    color = "black",         # Line color
+    linetype = "dashed",   # Line style (solid/dashed/dotted)
+    linewidth = 0.5        # Line thickness
+  )+
+  scale_color_manual(values = c("#00441B","#A4E0D8","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Log10(DCM UMIs)",
+    x = "Log10(Mapped reads)")+
+  ylim(0,7)+
+  xlim(0,7)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/DCM_unique_against_aligned.png", dpi=300, width = 5, height = 3)
+
+
+RNA_reads <- read.csv("/media/erlantz/71DE167A75E99BB4/Thesis/chapter 2/Stats_Plates_RNA_DNA/Plates1_2_4_8_RNA_stats.csv", sep = "\t")
+RNA_reads <- RNA_reads[RNA_reads$Plate != "Plate_4",]
+RNA_reads <- RNA_reads[RNA_reads$Day != "U87",]
+
+
+
+RNA_reads$Dox <- factor(RNA_reads$Dox, levels = c("16h","16h_24h_dtag","-Dox"))
+
+ggplot(RNA_reads, aes(x =log10(PE_aligned), y =  log10(UMI), color=Dox)) +
+  geom_point()+
+geom_abline(slope = 1,             # 45-degree line (y = x)
+    intercept = 0,         # Start at origin (0,0)
+    color = "black",         # Line color
+    linetype = "dashed",   # Line style (solid/dashed/dotted)
+    linewidth = 0.5        # Line thickness
+  )+
+  scale_color_manual(values = c("#440000","#E0A4A4","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Log10(RNA UMIs)",
+    x = "Log10(Mapped reads)")+
+  ylim(0,7)+
+  xlim(0,7)
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/RNA_unique_against_aligned.png", dpi=300, width = 5, height = 3)
+
+#umi VS GENES
+ggplot(gDNA_reads, aes(x =DCM_UMI_wholegene, y = Genes_wholegene)) +
+  geom_point(color="#00441B")+
+  scale_color_manual(values = c("#440000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Genes",
+    x = "DCM UMIs")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/DCM_unique_against_genes.png", dpi=300, width = 5, height = 3)
+
+
+ggplot(RNA_reads, aes(x =UMI, y = Unique_Gene_Count)) +
+  geom_point(color="#440000")+
+  scale_color_manual(values = c("#440000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Genes",
+    x = "RNA UMIs")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/RNA_unique_against_genes.svg", dpi=300, width = 5, height = 3)
+
+#Aligned, Unique_P, DCM_CpG
+ggplot(gDNA_reads, aes(x =Dox, y = Aligned_P, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#00441B","#A4E0D8","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Aligned (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_aligned_percentage.svg", dpi=300, width = 5, height = 3)
+ggplot(gDNA_reads, aes(x =Dox, y = CpG_unique_P, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#00441B","#A4E0D8","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "CpG unique (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_CpG_percentage.svg", dpi=300, width = 5, height = 3)
+
+gDNA_reads$DCM_unique_P <- as.numeric(gDNA_reads$DCM_unique_P)
+ggplot(gDNA_reads, aes(x =Dox, y = DCM_unique_P, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#00441B","#A4E0D8","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "DCM unique (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_DCM_percentage.svg", dpi=300, width = 5, height = 3)
+
+install.packages("yulab.utils")
+install.packages("ggbreak")
+
+library(ggbreak)
+ggplot(gDNA_reads, aes(x =Dox, y = DCM.CpG, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#00441B","#A4E0D8","#000000"))+
+  ylim(0,0.5)+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "DCM/CpG",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_DCM_CpG_ratio.svg", dpi=300, width = 5, height = 3)
+
+
+ggplot(RNA_reads, aes(x =Dox, y = Aligned_percentage, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#440000","#E0A4A4","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Aligned (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_aligned_percentage_RNA.svg", dpi=300, width = 5, height = 3)
+
+RNA_reads$Unique_percentage <- as.numeric(RNA_reads$Unique_percentage)
+ggplot(RNA_reads, aes(x =Dox, y = Unique_percentage, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#440000","#E0A4A4","#000000"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8)) +
+  labs(
+    title = "",
+    y = "Unique reads (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_unique_percentage_RNA.svg", dpi=300, width = 5, height = 3)
+
+
+
+#DCM, RNA, CpG, ATAC
+gDNA_reads2 <- gDNA_reads[match(RNA_reads$Sample, gDNA_reads$Sample_RNA),]
+gDNA_reads2 <- na.omit(gDNA_reads2)
+RNA_reads2 <- RNA_reads[match(gDNA_reads2$Sample_RNA, RNA_reads$Sample),]
+
+rownames(RNA_reads2) <- RNA_reads2$Sample
+rownames(gDNA_reads2) <- gDNA_reads2$Sample_RNA
+gDNA_RNA_stats <-merge(gDNA_reads2,RNA_reads2, by = "row.names",suffixes = c("_gDNA", "_RNA"))
+
+gDNA_reads$Dox <- factor(gDNA_reads$Dox, levels = c("-Dox","16h","16h_24h_dtag"))
+ggplot(gDNA_reads, aes(x =Dox, y = DCM.CpG, fill=Dox)) +
+  geom_boxplot()+
+  scale_fill_manual(
+    values = c(
+      "-Dox" = "#000000",
+      "16h" = "#00441B",
+      "16h_24h_dtag" = "#A4E0D8"),
+    labels = c(
+      "-Dox" = "Minus",
+      "16h" = "16h Dox",
+      "16h_24h_dtag" = "24h Chase"
+      )
+  ) +
+  scale_x_discrete(labels = c(
+      "-Dox" = "Minus",
+      "16h" = "16h Dox",
+      "16h_24h_dtag" = "24h Chase"
+  )) +
+  ylim(0,0.5)+
+     theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size =11, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 11, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 1.2),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top",
+    guides(fill= guide_legend(nrow = 3))
+  ) +
+  labs(
+    title = "",
+    y = "DCM/CpG",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_DCN_CpG_ratio_dox.png", dpi=300, width = 5, height = 3)
+
+
+gDNA_RNA_stats2 <- gDNA_RNA_stats[,colnames(gDNA_RNA_stats) %in% c("Plate_gDNA","Dox_gDNA","CpG_unique","DCM_unique","DCM_UMI_wholegene","Genes_wholegene","UMI","Unique_Gene_Count")]
+gDNA_RNA_stats2_sub <- gDNA_RNA_stats2[gDNA_RNA_stats2$Genes_wholegene > 300,]
+
+gDNA_RNA_stats3 <- gDNA_RNA_stats2_sub[,colnames(gDNA_RNA_stats2_sub) %in% c("Plate_gDNA","Dox_gDNA","CpG_unique","DCM_unique","UMI")]
+
+gDNA_RNA_stats3_melt <- melt(gDNA_RNA_stats3,  id.vars = c("Plate_gDNA","Dox_gDNA"))
+gDNA_RNA_stats3_melt$Dox_gDNA <- factor(gDNA_RNA_stats3_melt$Dox_gDNA, levels = c("-Dox", "16h","16h_24h_dtag"))
+gDNA_RNA_stats3_melt$group <- interaction(gDNA_RNA_stats3_melt$variable, gDNA_RNA_stats3_melt$Dox_gDNA, sep = "_")
+gDNA_RNA_stats3_melt$group <- factor(gDNA_RNA_stats3_melt$group, levels = c("CpG_unique_-Dox","CpG_unique_16h","CpG_unique_16h_24h_dtag", "DCM_unique_-Dox","DCM_unique_16h","DCM_unique_16h_24h_dtag","UMI_-Dox","UMI_16h","UMI_16h_24h_dtag"))
+gDNA_RNA_stats3_melt
+ggplot(gDNA_RNA_stats3_melt, aes(x = variable, y = log10(value), fill = group)) +
+  geom_violin(position = position_dodge(0.9)) +
+  geom_boxplot(width = 0.1, outlier.size = 1, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c(
+      "CpG_unique_-Dox" = "#A4E0D8",
+      "CpG_unique_16h" = "#00441B",
+      "CpG_unique_16h_24h_dtag" = "#000000",
+      "DCM_unique_-Dox" = "#000000",
+      "DCM_unique_16h" = "#00441B",
+      "DCM_unique_16h_24h_dtag" = "#A4E0D8",
+      "UMI_-Dox" = "#000000",
+      "UMI_16h" = "#440000",
+      "UMI_16h_24h_dtag" = "#E0A4A4"
+    ),
+    labels = c(
+      "CpG_unique_-Dox" = "CpG UMI -Dox",
+      "CpG_unique_16h" = "CpG UMI 16h Dox",
+      "CpG_unique_16h_24h_dtag" = "CpG UMI 24h Chase",
+      "DCM_unique_-Dox" = "DCM UMI Minus",
+      "DCM_unique_16h" = "DCM UMI 16h Dox",
+      "DCM_unique_16h_24h_dtag" = "DCM UMI 24h Chase",
+      "UMI_-Dox" = "RNA UMI Minus",
+      "UMI_16h" = "RNA UMI 16h Dox",
+      "UMI_16h_24h_dtag" = "RNA UMI 24h Chase"
+    )
+  ) +
+  scale_x_discrete(labels = c(
+    "CpG_unique" = "CpG UMI", 
+    "DCM_unique" = "DCM UMI", 
+    "UMI" = "RNA UMI"
+  )) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size =11, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 11, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 1.2),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top",
+    guides(fill= guide_legend(nrow = 3))
+  ) +
+  labs(
+    title = "",
+    y = "log10(Reads / Counts)",
+    x = ""
+  )
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/boxplot_DCM_CpG_RNA_umi.png", dpi=300, width = 8.5, height = 4)
+
+##stats RNA, DCM in genes and genes
+gDNA_RNA_stats4 <- gDNA_RNA_stats2_sub[,colnames(gDNA_RNA_stats2_sub) %in% c("Plate_gDNA","Dox_gDNA","DCM_UMI_wholegene","Genes_wholegene","UMI","Unique_Gene_Count")]
+gDNA_RNA_stats4_melt <- melt(gDNA_RNA_stats4,  id.vars = c("Plate_gDNA","Dox_gDNA"))
+gDNA_RNA_stats4_melt$Dox_gDNA <- factor(gDNA_RNA_stats4_melt$Dox_gDNA, levels = c("-Dox", "16h","16h_24h_dtag"))
+gDNA_RNA_stats4_melt$group <- interaction(gDNA_RNA_stats4_melt$variable, gDNA_RNA_stats4_melt$Dox_gDNA, sep = "_")
+gDNA_RNA_stats4_melt$group <- factor(gDNA_RNA_stats4_melt$group, levels = c("DCM_UMI_wholegene_-Dox","DCM_UMI_wholegene_16h","DCM_UMI_wholegene_16h_24h_dtag", "UMI_-Dox","UMI_16h","UMI_16h_24h_dtag","Genes_wholegene_-Dox","Genes_wholegene_16h","Genes_wholegene_16h_24h_dtag","Unique_Gene_Count_-Dox","Unique_Gene_Count_16h","Unique_Gene_Count_16h_24h_dtag"))
+
+ggplot(gDNA_RNA_stats4_melt, aes(x = variable, y = log10(value), fill = group)) +
+  geom_violin(position = position_dodge(0.9)) +
+  geom_boxplot(width = 0.1, outlier.size = 1, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c(
+      "DCM_UMI_wholegene_-Dox" = "#000000",
+      "DCM_UMI_wholegene_16h" = "#00441B",
+      "DCM_UMI_wholegene_16h_24h_dtag" = "#A4E0D8",
+      "UMI_-Dox" = "#000000",
+      "UMI_16h" = "#440000",
+      "UMI_16h_24h_dtag" = "#E0A4A4",
+      "Genes_wholegene_-Dox" = "#000000",
+      "Genes_wholegene_16h" ="#00441B",
+      "Genes_wholegene_16h_24h_dtag" = "#A4E0D8",
+      "Unique_Gene_Count_-Dox" ="#000000",
+      "Unique_Gene_Count_16h"="#440000",
+      "Unique_Gene_Count_16h_24h_dtag" ="#E0A4A4"
+      
+    ),
+    labels = c(
+      "DCM_UMI_wholegene_-Dox" = "DCM UMI Minus",
+      "DCM_UMI_wholegene_16h" = "DCM UMI 16h Dox",
+      "DCM_UMI_wholegene_16h_24h_dtag" = "DCM UMI 24h Chase",
+      "UMI_-Dox" = "RNA UMI Minus",
+      "UMI_16h" = "RNA UMI 16h Dox",
+      "UMI_16h_24h_dtag" = "RNA UMI 24h Dox",
+      "Genes_wholegene_-Dox" = "DCM Genes Minus",
+      "Genes_wholegene_16h" ="DCM Genes 16h Dox",
+      "Genes_wholegene_16h_24h_dtag" = "DCM Genes 24h Chase",
+      "Unique_Gene_Count_-Dox" ="RNA Genes Minus",
+      "Unique_Gene_Count_16h"="RNA Genes 16h Dox",
+      "Unique_Gene_Count_16h_24h_dtag" ="RNA Genes 24h Chase"
+    )
+  ) +
+  scale_x_discrete(labels = c(
+    "DCM_UMI_wholegene" = "CpG UMI", 
+    "Genes_wholegene" = "DCM Genes", 
+    "UMI" = "RNA UMI",
+    "Unique_Gene_Count" = "RNA Genes"
+  )) +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size =11, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 11, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 1.2),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top"
+  ) +
+  labs(
+    title = "",
+    y = "log10(Counts)",
+    x = ""
+  )
+ggsave("/media/erlantz/71DE167A75E99BB4/Multiome_NPC_Run7/10x_data/CellRank/figures/Integration_multi_D2_D4/Figures_paper/Seurat_figures_paper/Statistics/violin_DCM_RNA_UMIs_Genes.png", dpi=300, width = 7.75, height = 4)
+
+```
+

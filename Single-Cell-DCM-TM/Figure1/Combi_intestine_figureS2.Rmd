@@ -1,0 +1,2228 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#libraries
+
+library(ggplot2)
+library(dplyr)
+library(Seurat)
+library(pheatmap)
+library(BiocFileCache)
+library(biomaRt)
+library(gtools)
+library(tidyr)
+library(plotly)
+library(patchwork)
+library(ggbreak)
+library(reshape2)
+library(biomaRt)
+library(GenomicRanges)
+library(rtracklayer)
+
+library(ggpubr)
+
+#QC plots
+library(org.Mm.eg.db)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(rtracklayer)
+library(dplyr)
+Matrix_genebody_DCM <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix/Pool32B_NPC_noDup_rcMatrix_DCM_postTSS2KB-TES.tsv", header = T, sep = "\t")
+Matrix_gene_DCM <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix/Pool32B_NPC_noDup_rcMatrix_DCM_geneEnsemble.tsv", header = T, sep = "\t")
+Matrix_CpGisland <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix/Pool32B_NPC_noDup_rcMatrix_CpG-M_CpGIsland.tsv", header = T, sep = "\t")
+
+rownames(Matrix_CpGisland) <- Matrix_CpGisland$gene
+Matrix_CpGisland$gene <- NULL
+Matrix_CpGisland$region_ID <- NULL
+
+colSums(Matrix_CpGisland)
+write.csv(colSums(Matrix_CpGisland), "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_CpGisland.csv")
+
+Matrix_genebody_DCM$region_ID <- NULL
+Matrix_gene_DCM$region_ID <- NULL
+
+Matrix_genebody_DCM <- Matrix_genebody_DCM %>%
+  group_by(gene) %>%
+  summarise(across(everything(), sum))
+Matrix_genebody_DCM <- data.frame(Matrix_genebody_DCM)
+rownames(Matrix_genebody_DCM) <- Matrix_genebody_DCM$gene
+Matrix_genebody_DCM$gene <- NULL 
+
+colSums(Matrix_genebody_DCM)
+write.csv(colSums(Matrix_genebody_DCM), "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_genebody_DCM.csv")
+
+
+Matrix_gene_DCM <- Matrix_gene_DCM %>%
+  group_by(gene) %>%
+  summarise(across(everything(), sum))
+Matrix_gene_DCM <- data.frame(Matrix_gene_DCM)
+rownames(Matrix_gene_DCM) <- Matrix_gene_DCM$gene
+Matrix_gene_DCM$gene <- NULL 
+
+colSums(Matrix_gene_DCM)
+write.csv(colSums(Matrix_gene_DCM), "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_gene_DCM.csv")
+
+#Count gene number
+Matrix_genebody_DCM_gene_number <- sapply(Matrix_genebody_DCM, function(x) sum(x > 0))
+Matrix_gene_DCM_gene_number <- sapply(Matrix_gene_DCM, function(x) sum(x > 0))
+Matrix_CpGisland_number_of_CpGislands <- sapply(Matrix_CpGisland, function(x) sum(x > 0))
+
+write.csv(Matrix_genebody_DCM_gene_number, "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_genebody_DCM_gene_number.csv")
+write.csv(Matrix_gene_DCM_gene_number, "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_gene_DCM_gene_number.csv")
+write.csv(Matrix_CpGisland_number_of_CpGislands, "/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix_CpGisland_number_of_CpGislands.csv")
+```
+
+#Stats per cell
+```{r}
+library(ggplot2)
+Stats_intestine <- read.csv("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/stats/stats_intestine.csv", header = T, sep = ",")
+ano_intestine_combi <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/stats/Pool32B_NPC_cell_stats.tsv", header = T, sep = "\t")
+ano_intestine_combi$condition <- "48h_Dox"
+
+
+d <- density(log10(ano_intestine_combi$readcount), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3.5 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#377EB8", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.10, size = 3) +
+  labs(
+    title = "48h Dox",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+       theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/local_minima_histogram_combi_intestine_plus.png", dpi=300, width = 3.5, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/local_minima_histogram_combi_intestine_plus.pdf", dpi=300, width = 3.5, height = 2)
+
+ano_intestine_combi_sub <- ano_intestine_combi[log10(ano_intestine_combi$readcount) > 4.45,]
+
+
+
+```
+
+
+```{r}
+Stats_intestine$selected <- log10(Stats_intestine$Annotated) > 4.45
+
+ggplot(Stats_intestine_sub,  aes(x = log10(Aligned), y = log10(DCM_unique)))+
+  geom_point(color = "#377EB8") +
+  geom_abline(slope = 1,             # 45-degree line (y = x)
+    intercept = 0,         # Start at origin (0,0)
+    color = "black",         # Line color
+    linetype = "dashed",   # Line style (solid/dashed/dotted)
+    linewidth = 0.5        # Line thickness
+  )+
+  labs(x="Log10(Aligned reads)", y="log10(DCM unique reads)")+
+  ggtitle(paste("Enterocytes +48h Dox"))+
+   ylim(0,7)+
+   xlim(0,7)+
+       theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/small_intestine_mapped_vs_DCM_unique.png",width = 2, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/small_intestine_mapped_vs_DCM_unique.pdf",width = 2, height = 2)
+
+cor(log10(Stats_intestine_sub$Aligned), log10(Stats_intestine_sub$DCM_unique), method = "pearson")
+model <- lm(log10(DCM_unique) ~ log10(Aligned), data = Stats_intestine_sub)
+summary(model)
+
+summary(Stats_intestine_sub$DCM_uniqueP)
+summary(Stats_intestine_sub$Annotated)
+
+Stats_intestine_sub <- Stats_intestine[Stats_intestine$selected == TRUE,]
+ggplot(Stats_intestine_sub,  aes(x = DCM_genebody_UMI, y =DCM_genebody_genes ))+
+  geom_point(color="#377EB8") +
+  #geom_smooth(method=lm, se=FALSE)+
+  #stat_cor(method="spearman", p.accuracy = 0.001, r.accuracy = 0.01)+
+  labs(x="Unique DCM reads", y="Genes")+
+  #scale_color_discrete(labels = c("NPC", "U87")) +
+      theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.text.x = element_text(size = 11,  face = "plain", angle=45,hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11,  face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))+scale_x_continuous(labels = scales::comma)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/small_intestine_umivsgenes.png",width = 2, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/small_intestine_umivsgenes.pdf",width = 2, height = 2)
+
+aggregate(DCM_genes ~ Sample, data = Stats_intestine_sub, FUN = summary)
+aggregate(DCM_unique ~ Sample, data = Stats_intestine_sub, FUN = summary)
+aggregate(CpG_unique ~ Sample, data = Stats_intestine_sub, FUN = summary)
+aggregate(DCM_UMI ~ Sample, data = Stats_intestine_sub, FUN = summary)
+
+```
+
+#Induction with Run8
+```{r}
+
+
+Stats_intestine <- read.csv("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/stats/stats_intestine.csv", header = T, sep = ",")
+ano_intestine_combi_minus <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Run8_intestine/SI_5kminus_cell_stats.tsv", header = T, sep = "\t")
+ano_intestine_combi_plus <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Run8_intestine/SI_5kplus_cell_stats.tsv", header = T, sep = "\t")
+ano_intestine_combi_minus$condition <- "Minus_Dox"
+ano_intestine_combi_plus$condition <- "48h_Dox"
+
+ggplot(ano_intestine_combi_minus, aes(x = log10(readcount), fill=condition)) +
+  geom_histogram(position = "identity", alpha = 0.6, bins = 50, color = "black") +
+  scale_fill_manual(values = c("48h_Dox" = "#00441B")) +
+  labs(
+    title = "Distribution of raw reads by Condition",
+    x = "log10(Annotated Reads)",
+    y = "Count",
+    fill = "Dox"
+  ) +
+  theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))+
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+d <- density(log10(ano_intestine_combi_plus$readcount), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 2 & x[valley_indices] < 3]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#377EB8", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.10, size = 3) +
+  labs(
+    title = "48h Dox",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+      theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 8, face = "bold"),
+    plot.title = element_text(size =8, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 8, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 8, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.8),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+
+ano_intestine_combi_minus_sub <- ano_intestine_combi_minus[log10(ano_intestine_combi_minus$readcount) > 2.02,]
+ano_intestine_combi_plus_sub <- ano_intestine_combi_plus[log10(ano_intestine_combi_plus$readcount) > 2.477,]
+
+
+combi_intestine_minus_run8 <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Run8_intestine/SI_5k_minus_dox_combi_CpG_M_DCM_combiCounts.csv", header = T, sep = ",")
+
+combi_intestine_plus_run8 <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Run8_intestine/SI_5k_plus_dox_combi_CpG_M_DCM_combiCounts.csv", header = T, sep = "\t")
+
+combi_intestine_minus_run8_DCM <- combi_intestine_minus_run8[,7:8]
+combi_intestine_minus_run8_CpG <- combi_intestine_minus_run8[,3:4]
+combi_intestine_plus_run8_DCM <- combi_intestine_plus_run8[,7:8]
+combi_intestine_plus_run8_CpG <- combi_intestine_plus_run8[,3:4]
+
+combi_intestine_minus_run8_CpG_filtered <- combi_intestine_minus_run8_CpG[match(combi_intestine_minus_run8_DCM$DCM_barcode_unique, combi_intestine_minus_run8_CpG$CpG_barcode_unique),]
+
+table(combi_intestine_minus_run8_CpG_filtered$CpG_barcode_unique == combi_intestine_minus_run8_DCM$DCM_barcode_unique)
+minus_CpG_DCM_unique <- cbind(combi_intestine_minus_run8_CpG_filtered,combi_intestine_minus_run8_DCM)
+minus_CpG_DCM_unique_filtered <- minus_CpG_DCM_unique %>%
+  filter(!CpG_barcode_unique %in% CpG_barcode_unique[duplicated(CpG_barcode_unique) | duplicated(CpG_barcode_unique, fromLast = TRUE)])
+rownames(minus_CpG_DCM_unique_filtered) <- minus_CpG_DCM_unique_filtered$CpG_barcode_unique
+minus_CpG_DCM_unique_filtered$CpG_barcode_unique <- NULL
+minus_CpG_DCM_unique_filtered$DCM_barcode_unique <- NULL
+minus_CpG_DCM_unique_filtered$condition <- "Minus_Dox"
+minus_CpG_DCM_unique_filtered$Experiment <- "Exp.1"
+
+combi_intestine_plus_run8_CpG_filtered <- combi_intestine_plus_run8_CpG[match(combi_intestine_plus_run8_DCM$DCM_barcode_unique, combi_intestine_plus_run8_CpG$CpG_barcode_unique),]
+
+table(combi_intestine_plus_run8_CpG_filtered$CpG_barcode_unique == combi_intestine_plus_run8_DCM$DCM_barcode_unique)
+
+plus_CpG_DCM_unique <- cbind(combi_intestine_plus_run8_CpG_filtered,combi_intestine_plus_run8_DCM)
+plus_CpG_DCM_unique_filtered <- plus_CpG_DCM_unique %>%
+  filter(!CpG_barcode_unique %in% CpG_barcode_unique[duplicated(CpG_barcode_unique) | duplicated(CpG_barcode_unique, fromLast = TRUE)])
+rownames(plus_CpG_DCM_unique_filtered) <- plus_CpG_DCM_unique_filtered$CpG_barcode_unique
+plus_CpG_DCM_unique_filtered$CpG_barcode_unique <- NULL
+plus_CpG_DCM_unique_filtered$DCM_barcode_unique <- NULL
+plus_CpG_DCM_unique_filtered$condition <- "48h_Dox"
+plus_CpG_DCM_unique_filtered$Experiment <- "Exp.1"
+
+Stats_intestine_sub2 <- Stats_intestine_sub[,colnames(Stats_intestine_sub) %in% c("CpG_unique","DCM_unique")]
+Stats_intestine_sub2$condition <- "48h_Dox"
+Stats_intestine_sub2$Experiment <- "Exp.2"
+
+intestine_stats_combirun8_run2 <-rbind(minus_CpG_DCM_unique_filtered, plus_CpG_DCM_unique_filtered,Stats_intestine_sub2)
+intestine_stats_combirun8_run2$DCM_CpG <-intestine_stats_combirun8_run2$DCM_unique / intestine_stats_combirun8_run2$CpG_unique
+intestine_stats_combirun8_run2$condition <- factor(intestine_stats_combirun8_run2$condition, levels = c("Minus_Dox","48h_Dox"))
+intestine_stats_combirun8_run2$Experiment <- factor(intestine_stats_combirun8_run2$Experiment, levels = c("Exp.1","Exp.2"))
+intestine_stats_combirun8_run2$condexp <- paste0(intestine_stats_combirun8_run2$Experiment,"_",intestine_stats_combirun8_run2$condition)
+intestine_stats_combirun8_run2$condexp <- factor(intestine_stats_combirun8_run2$condexp, levels = c("Exp.1_Minus_Dox","Exp.1_48h_Dox","Exp.2_48h_Dox"))
+p <- ggplot(intestine_stats_combirun8_run2,  aes(x = condexp, y = DCM_CpG, fill=condition))+
+  geom_violin(trim = FALSE, color = "black") +  # Add violin plot
+  geom_boxplot(width = 0.1, color = "black", outlier.shape = NA, fill="white") +  # Add boxplot inside violin plot
+  #geom_jitter(width = 0.2, size = 1, alpha = 0.5) +  # Add jitter for individual data points
+  #geom_smooth(method=lm, se=FALSE)+
+  #stat_cor(method="spearman", p.accuracy = 0.001, r.accuracy = 0.01)+
+  scale_fill_manual(values = c("#A50F15","#377EB8"))+
+  labs(x="", y="DCM/CpG ratio")+
+  scale_x_discrete(labels = c("Exp.1 Minus Dox", "Exp.1 48h Dox", "Exp.2 48h Dox"))+
+  ggtitle(paste(""))+
+  coord_cartesian(ylim=c(0,1))+
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text.x = element_text(size = 11, angle=45,face = "plain", hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+p_nolegend <- p + theme(legend.position = "none")
+
+
+
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/DCM_CpG_ratio_per_Dox_combiintestine_legend.png",legend_combined, dpi=300,width = 2.3, height = 0.62)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/DCM_CpG_ratio_per_Dox_combiintestine.png",p_nolegend, dpi=300,width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/DCM_CpG_ratio_per_Dox_combiintestine.pdf",p, dpi=300,width = 3, height = 4)
+
+```
+
+#UMAP
+```{r}
+
+combi_intestine <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Matrix/Pool32B_NPC_noDup_rcMatrix_DCM_geneEnsemble.tsv", header = T)
+
+Stats_intestine <- read.table("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/stats_intestine.csv", header = T, sep = ",")
+
+
+
+combi_intestine$region_ID <- NULL
+
+combi_intestine <- combi_intestine %>%
+  group_by(gene) %>%
+  summarise(across(everything(), sum))
+combi_intestine <- data.frame(combi_intestine)
+rownames(combi_intestine) <- combi_intestine$gene
+combi_intestine$gene <- NULL 
+
+Stats_intestine$Barcode_DCM <- paste0("X",Stats_intestine$Barcode)
+Stats_intestine$selected <- log10(Stats_intestine$Annotated) > 4.45
+Stats_intestine_sub <- Stats_intestine[Stats_intestine$selected == TRUE,]
+combi_intestine_sub <- combi_intestine[,match(Stats_intestine_sub$Barcode_DCM, colnames(combi_intestine))]
+rownames(Stats_intestine_sub) <- Stats_intestine_sub$Barcode_DCM
+
+combi_intestine_seurat <- CreateSeuratObject(combi_intestine_sub, min.features = 300, min.cells = 3, project = "DCM_combi", meta.data = Stats_intestine_sub) %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+
+VlnPlot(combi_intestine_seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+combi_intestine_seurat <- NormalizeData(combi_intestine_seurat)
+combi_intestine_seurat <- FindVariableFeatures(combi_intestine_seurat)
+combi_intestine_seurat <- ScaleData(combi_intestine_seurat)
+combi_intestine_seurat <- RunPCA(combi_intestine_seurat)
+combi_intestine_seurat <- FindNeighbors(combi_intestine_seurat, dims = 1:5, reduction = "pca")
+
+combi_intestine_seurat <- RunUMAP(combi_intestine_seurat, dims = 1:5, verbose = FALSE)
+combi_intestine_seurat <- FindClusters(combi_intestine_seurat, resolution = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8), cluster.name = c("unintegrated_clusters_0.1","unintegrated_clusters_0.2","unintegrated_clusters_0.3", "unintegrated_clusters_0.4", "unintegrated_clusters_0.5", "unintegrated_clusters_0.6", "unintegrated_clusters_0.7", "unintegrated_clusters_0.8"))
+DimPlot(combi_intestine_seurat, group.by = c( "unintegrated_clusters_0.7")) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 8, face = "bold"),
+    plot.title = element_text(size =8, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 8, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 8, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.8),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/Umap_per_cluster_combi_onlydcm.png", width = 3, height = 3)
+
+Idents(combi_intestine_seurat) <- "unintegrated_clusters_0.7"
+combi_intestine_seurat_markers <-  FindAllMarkers(combi_intestine_seurat, min.pct = 0.1, logfc.threshold = 0.5, only.pos = TRUE, assay = "RNA") #markers clustered by label
+combi_intestine_seurat_markers_sub <- combi_intestine_seurat_markers[combi_intestine_seurat_markers$p_val_adj < 0.05 & combi_intestine_seurat_markers$avg_log2FC > 0.5,]
+
+
+
+
+
+```
+
+#Integration
+
+
+```{r}
+batch_list3 <- readRDS(file = "/media/erlantz/71DE167A75E99BB4/Pool_35/Harber/Large_harber_plate_integration/Atlas_Large_plates_RNA_DCM_list.rds")
+DefaultAssay(combi_intestine_seurat) <- "RNA"
+
+batch_list4 <- batch_list3
+batch_list4$RNA_plate <- NULL
+batch_list4$DCM_plate <- NULL
+batch_list4$DCM_combi <- combi_intestine_seurat
+
+batch_list4 <- lapply(batch_list4, function(obj) {
+  obj <- NormalizeData(obj)
+  obj <- FindVariableFeatures(obj, selection.method = "vst")
+  return(obj)
+})
+
+# Find integration anchors (takes time for large datasets)
+integration_features <- SelectIntegrationFeatures(object.list = batch_list4)
+anchors <- FindIntegrationAnchors(
+  object.list = batch_list4,
+  anchor.features = integration_features,
+  dims = 1:15  # Adjust based on your PCA results
+)
+
+integrated_seurat_combi <- IntegrateData(anchorset = anchors, dims = 1:15, k.weight = 70)
+
+# Switch to integrated assay (important!)
+DefaultAssay(integrated_seurat_combi) <- "integrated"
+
+# Scale data and run PCA
+integrated_seurat_combi <- ScaleData(integrated_seurat_combi)
+integrated_seurat_combi <- RunPCA(integrated_seurat_combi, npcs = 50)
+
+# Check batch effect correction (batches should mix well in PCA)
+DimPlot(integrated_seurat_combi, reduction = "pca", group.by = "orig.ident")
+integrated_seurat_combi$Batch[is.na(integrated_seurat_combi$Batch)] <- "combi"
+
+integrated_seurat_combi <- FindNeighbors(integrated_seurat_combi, dims = 1:20, reduction = "pca")
+integrated_seurat_combi <- FindClusters(integrated_seurat_combi, resolution = c(0.01,0.05,0.1,0.15,0.2,0.3,0.6), cluster.name = c("unintegrated_clusters_0.01","unintegrated_clusters_0.05","unintegrated_clusters_0.1","unintegrated_clusters_0.15", "unintegrated_clusters_0.2", "unintegrated_clusters_0.3","unintegrated_clusters_0.6"))
+integrated_seurat_combi <- RunUMAP(integrated_seurat_combi, dims = 1:20, verbose = FALSE)
+DimPlot(integrated_seurat_combi, reduction = "umap", group.by = c( "celltype","Batch","unintegrated_clusters_0.6"), cols = publication_colors_27, pt.size = 0.5)
+
+table(integrated_seurat_combi$celltype, integrated_seurat_combi$unintegrated_clusters_0.6)
+ct_table <- table(integrated_seurat_combi$celltype, integrated_seurat_combi$unintegrated_clusters_0.6)
+
+FeaturePlot(integrated_seurat_combi, features = c("Pbx1","Ugt1a9","Ugt1a6b","Ugt1a7c"))
+# Draw the heatmap
+png("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Combi_small_intestine/seurat/integration/heatmap_seurat_clusters_celltype.png", width = 1000, height = 500, units = "px")
+pheatmap(ct_table,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         display_numbers = TRUE,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         main = "Cell Type vs Unintegrated Clusters Heatmap")
+dev.off()
+FeaturePlot(integrated_seurat_combi, features = c("Lct","Lgr5","Mki67","Dclk1","Fcgbp","Neurod1","Lyz1","Itln1","Atg7","Defa23"), cols = c("gray","#0C777A"))
+
+integrated_seurat_combi$cell_identity_int2 <- recode(integrated_seurat_combi$unintegrated_clusters_0.6,
+                     "0" = "TA/ISC",
+                     "1" = "TA/ISC",
+                     "2" = "ISC",
+                     "3" = "ISC",
+                     "4" = "Paneth",
+                     "5" = "Enterocyte",
+                     "6" = "Goblet",
+                     "7" = "ISC",
+                     "8" = "TA/ISC",
+                     "9" = "TA/ISC",
+                     "10" = "Enterocyte" ,
+                     "11" = "TA/ISC" ,
+                     "12" = "Enterocyte",
+                     "13" = "Enterocyte" ,
+                     "14" = "Tuft" ,
+                     "15" = "Goblet",
+                     "16" = "ISC" ,
+                     "17" = "Enteroendocrine" ,
+                     "18" = "Paneth")
+
+integrated_seurat_combi$dataset <- recode(integrated_seurat_combi$Batch,
+                     "B1" = "RNA_reference",
+                     "B2" = "RNA_reference",
+                     "B3" = "RNA_reference",
+                     "B4" = "RNA_reference",
+                     "B5" = "RNA_reference",
+                     "B6" = "RNA_reference",
+                     "B7" = "RNA_reference",
+                     "B8" = "RNA_reference",
+                     "B9" = "RNA_reference",
+                     "B10" = "RNA_reference" ,
+                     "M1" = "RNA_reference" ,
+                     "M2" = "RNA_reference",
+                     "combi" = "sciMeDseq")
+
+DimPlot(integrated_seurat_combi, reduction = "umap", group.by = c( "dataset"), cols = publication_colors_27, pt.size = 0.01) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    plot.title =  element_blank(),
+    axis.text =  element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line =  element_blank(),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "bold", size = 11),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/umap_combi_integration_reference_dataset.png", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/umap_combi_integration_reference_dataset.svg", dpi=300, width = 3, height = 2)
+DimPlot(integrated_seurat_combi, reduction = "umap", group.by = c( "cell_identity_int2"), cols = publication_colors_27, pt.size = 0.01) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    plot.title =  element_blank(),
+    axis.text =  element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line =  element_blank(),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "bold", size = 11),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/umap_combi_integration_reference_celltype.svg", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/umap_combi_integration_reference_celltype.svg", dpi=300, width = 3, height = 2)
+
+
+
+```
+
+#pheatmap
+
+```{r}
+output_dir <- "/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/"
+table(integrated_seurat_combi$celltype, integrated_seurat_combi$unintegrated_clusters_0.6)
+ct_table <- table(integrated_seurat_combi$celltype, integrated_seurat_combi$unintegrated_clusters_0.6)
+
+# Draw the heatmap
+png(file.path(output_dir,"heatmap_seuratclusters_vs_celltypeREF.png"), width = 8, height = 4, units = "in", res=300) 
+svg(file.path(output_dir,"heatmap_seuratclusters_vs_celltypeREF.svg"), width = 8, height = 4) 
+pdf(file.path(output_dir,"heatmap_seuratclusters_vs_celltypeREF.pdf"),width = 8, height = 4) 
+pheatmap(ct_table,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         display_numbers = TRUE,
+         number_format = "%.0f",
+         fontsize_row = 10,
+         fontsize_col = 10,
+         main = "")
+dev.off()
+
+
+```
+
+
+#Cell distribution
+```{r}
+cell_counts <- integrated_seurat_combi@meta.data %>%
+  group_by(dataset, cell_identity_int2) %>%
+  summarise(count = n()) %>%
+  ungroup()
+cell_props <- cell_counts %>%
+  group_by(dataset) %>%
+  mutate(prop = count / sum(count))
+
+cell_props$cell_identity_int2 <- factor(cell_props$cell_identity_int2, levels = c("ISC","TA/ISC","Enterocyte","Goblet","Paneth","Tuft","Enteroendocrine"))
+
+# Plot stacked barplot
+p <- ggplot(cell_props, aes(x = dataset, y = prop, fill = cell_identity_int2)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = publication_colors_27)+
+  labs(title = "",
+       x = "",
+       y = "Cell Proportion",
+       fill = "Cell Type") +
+    theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text.x = element_text(size = 11, angle=45,face = "plain", hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+
+
+
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+p_nolegend <- p + theme(legend.position = "none")
+
+
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/cell_distribution_combi_reference_afterintegration.png",p_nolegend, dpi=300, width = 2, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/cell_distribution_combi_reference_afterintegration_legend.png",legend_combined, dpi=300,width = 1.2, height = 1.2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/cell_distribution_combi_reference_afterintegration.pdf",p, dpi=300,width = 4.5, height = 6)
+#Gene markers
+
+DefaultAssay(integrated_seurat_combi) <- "RNA"
+integrated_seurat_combi <- JoinLayers(integrated_seurat_combi, assay = "RNA")
+Idents(integrated_seurat_combi) <- "cell_identity_int"
+
+
+#markers by integration RNA assay
+DefaultAssay(integrated_seurat_combi) <- "RNA"
+integrated_seurat_combi <- SCTransform(integrated_seurat_combi)
+integrated_seurat_combi_markers <-  FindAllMarkers(integrated_seurat_combi, min.pct = 0.1, logfc.threshold = 0.25, only.pos = TRUE,  assay= "RNA") 
+integrated_seurat_combi_markers_sub <- integrated_seurat_combi_markers[integrated_seurat_combi_markers$p_val_adj < 0.05,]
+
+
+```
+
+##Module score by integrated gene markers
+
+```{r}
+integrated_seurat_combi_markers_sub<- integrated_seurat_combi_markers_sub[integrated_seurat_combi_markers_sub$avg_log2FC > 0.5,]
+unique_clusters <- unique(integrated_seurat_combi_markers_sub$cluster)
+
+# Create an empty list to store the final plots for each cluster
+plus_fplots <- list()
+
+# Iterate over each cluster
+for (cluster in unique_clusters) {
+  # Individual module
+  #module <- intersected_genes_by_cluster[[cluster]]
+  module <- integrated_seurat_combi_markers_sub[integrated_seurat_combi_markers_sub$cluster == cluster, "gene"]
+
+  # Add module scores to the gast object
+  integrated_seurat_combi <- AddModuleScore( integrated_seurat_combi, features = list(c(module)), name = paste0(cluster),  nbin = 5)
+  
+  # Generate the feature plot for the current cluster
+  plus_fplot <- FeaturePlot(object =  integrated_seurat_combi, reduction = "umap",features = paste0(cluster, "1"), pt.size = 0.5, cols= c("white","#B0B0B0", "#882255"))
+  #scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))
+  
+  # Save the plot to the plus_fplots list
+  plus_fplots[[paste0("plus_fplot", cluster)]] <- plus_fplot
+  
+  # Save the plots
+  ggsave(filename = paste0("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/", cluster, "_markers_integrated_MS.png"), plot = plus_fplot, dpi = 300,width = 5, height = 3)
+
+}
+
+library(ggplot2)
+library(reshape2)
+
+# Extract meta data
+meta_data <- integrated_seurat_combi@meta.data
+
+# Identify module score columns
+module_score_cols <- grep("1", colnames(meta_data), value = TRUE)
+module_score_cols <- module_score_cols[4:10]
+# Add cell identity and dataset
+plot_df <- meta_data[, c("cell_identity_int2", "dataset", module_score_cols)]
+
+
+plot_df <- plot_df %>%
+  group_by(dataset) %>%
+  mutate(across(c(Enterocyte1, Enteroendocrine1, Goblet1, ISC1, Paneth1, Tuft1, `TA/ISC1`),
+                ~ scale(.)[,1],
+                .names = "{.col}_zscore")) %>%
+  ungroup()
+
+
+plot_df2 <- plot_df
+plot_df2$Enterocyte1 <- NULL
+plot_df2$Enteroendocrine1 <- NULL
+plot_df2$ISC1 <- NULL
+plot_df2$Goblet1 <- NULL
+plot_df2$Paneth1 <- NULL
+plot_df2$Tuft1 <- NULL
+plot_df2$`TA/ISC1` <- NULL
+
+
+plot_df <- plot_df %>%
+  rowwise() %>%
+  mutate(across(c(Enterocyte1, Enteroendocrine1, Goblet1, ISC1, Paneth1, Tuft1, `TA/ISC1`),
+                ~ (.-mean(c_across(c(Enterocyte1, Enteroendocrine1, Goblet1, ISC1, Paneth1, Tuft1, `TA/ISC1`)))) /
+                  sd(c_across(c(Enterocyte1, Enteroendocrine1, Goblet1, ISC1, Paneth1, Tuft1, `TA/ISC1`))),
+                .names = "{.col}_zscore_within_cell")) %>%
+  ungroup()
+
+# Reshape to long format for ggplot
+plot_df_long <- melt(plot_df2, id.vars = c("cell_identity_int2", "dataset"),
+                     variable.name = "cluster", value.name = "module_score")
+plot_df_long$cluster <- gsub("1_zscore", "", plot_df_long$cluster)
+plot_df_long$cell_identity_int2 <- factor(plot_df_long$cell_identity_int2, levels = c("ISC","TA/ISC","Enterocyte","Goblet","Paneth","Tuft","Enteroendocrine"))
+# Optional: clean cluster names
+library(ggpubr)
+library(ggplot2)
+library(dplyr)
+
+# Make sure this directory exists or change it
+output_dir <- "/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/"
+# Get unique clusters
+clusters <- unique(plot_df_long$cluster)
+
+# Loop through each cluster and save individual plots
+for (cl in clusters) {
+  # Filter data for the current cluster
+  df_sub <- plot_df_long %>% filter(cluster == cl)
+
+  # Create plot
+  p <- ggplot(df_sub, aes(x = cell_identity_int2, y = module_score, fill = dataset)) +
+    geom_boxplot(scale = "width", trim = TRUE) +
+    labs(title = "",
+         x = "",
+         y = paste0("Z Module Score ",cl)) +
+    scale_fill_manual(name= "Dataset", values = c("RNA_reference" = "#0072B2", "sciMeDseq" = "#E69F00")) +
+     theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text.x = element_text(size = 11, angle=45,face = "plain", hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+
+  # Save the plot
+  g <- ggplotGrob(p)
+
+# Extract all legend boxes
+  legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+  legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+  p_nolegend <- p 
+  ggsave(
+    filename = file.path(output_dir, paste0("Z_module_score_cluster_", cl, ".pdf")),
+    plot = p_nolegend,
+    width = 4, height = 3, dpi = 300
+  )
+}
+
+
+ggsave(filename = file.path(output_dir,"boxplot_plot_percluster_on_MS_zscore_legend.png"),legend_combined, dpi = 300,width = 3, height = 0.5)
+
+
+
+
+# Filter for Combi_DCM
+df <- subset(plot_df_long, dataset == "sciMeDseq")
+
+# Prepare an empty list to collect plots
+plots <- list()
+
+# Loop through clusters
+for (clust in unique(df$cluster)) {
+  
+  df_clust <- df %>% filter(cluster == clust)
+  
+  # Target identity to compare against
+  ref_group <- clust  # assuming cluster names match cell_identity_int exactly
+  
+  # Skip cluster if reference group not present
+  if (!(ref_group %in% df_clust$cell_identity_int2)) next
+  
+  # Create pairwise comparisons: each group vs the cluster's reference group
+  identities <- unique(df_clust$cell_identity_int2)
+  comparisons <- lapply(setdiff(identities, ref_group), function(other) c(ref_group, other))
+
+  # Add highlight column
+  df_clust <- df_clust %>%
+    mutate(highlight = ifelse(cell_identity_int2 == ref_group, "Target", "Rest"))
+  
+  # Plot
+  p <- ggplot(df_clust, aes(x = cell_identity_int2, y = module_score, fill = highlight)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(
+      title = ,
+      x = "",
+      y = paste0("DCM Z Module Score\n",clust)
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_manual(values = c("Target" = "#D55E00", "Rest" = "#0072B2")) +
+    stat_compare_means(
+      comparisons = comparisons,
+      method = "wilcox.test",
+      label = "p.signif",
+      tip.length = 0.01
+    ) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.25)))+
+       theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text.x = element_text(size = 11, angle=45,face = "plain", hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+    p_nolegend <- p #+ theme(legend.position = "none")
+
+  plots[[clust]] <- p_nolegend
+}
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+# Save each plot
+for (clust in names(plots)) {
+  ggsave(
+    filename = file.path(output_dir,paste0("DCM_ZMS_cluster_", gsub("[/ ]", "_", clust), ".pdf")),
+    plot = plots[[clust]],
+    dpi=300,
+    width = 3,
+    height = 4
+  )
+}
+ggsave(filename = file.path(output_dir,"DCM_MS_zscore_legend.png"),legend_combined, dpi = 300,width = 3, height = 0.5)
+
+```
+
+
+
+#Finding intersecting genes
+
+```{r}
+
+#markers by combi
+integrated_seurat_combi_subcombi <- subset(integrated_seurat_combi, dataset == "sciMeDseq")
+DefaultAssay(integrated_seurat_combi_subcombi) <- "RNA"
+integrated_seurat_combisub_markers <-  FindAllMarkers(integrated_seurat_combi_subcombi, min.pct = 0.1, logfc.threshold = 0.25, only.pos = TRUE, assay= "RNA") 
+integrated_seurat_combisub_markers_sub <- integrated_seurat_combisub_markers[integrated_seurat_combisub_markers$p_val_adj < 0.05 & integrated_seurat_combisub_markers$avg_log2FC > 0.5,]
+
+#markers by RNA reference
+integrated_seurat_combi_subharber <- subset(integrated_seurat_combi, dataset == "RNA_reference")
+DefaultAssay(integrated_seurat_combi_subharber) <- "RNA"
+integrated_seurat_combi_subharber <- JoinLayers(integrated_seurat_combi_subharber)
+integrated_seurat_harbersub_markers <-  FindAllMarkers(integrated_seurat_combi_subharber, min.pct = 0.2, logfc.theshold = 1, only.pos = TRUE, assay = "RNA") 
+integrated_seurat_harbersub_markers_sub <- integrated_seurat_harbersub_markers[integrated_seurat_harbersub_markers$p_val_adj < 0.05 & integrated_seurat_harbersub_markers$avg_log2FC > 0.5,]
+
+library(dplyr)
+library(purrr)
+library(VennDiagram)
+library(tibble)
+integrated_seurat_harbersub_markers_sub$cluster <- gsub("/","_",integrated_seurat_harbersub_markers_sub$cluster)
+harber_genes_by_cluster <- integrated_seurat_harbersub_markers_sub %>%
+  group_by(cluster) %>%
+  summarise(genes = list(unique(gene))) %>%
+  deframe()
+integrated_seurat_combisub_markers$cluster <- gsub("/","_",integrated_seurat_combisub_markers$cluster)
+
+combi_genes_by_cluster <- integrated_seurat_combisub_markers %>%
+  group_by(cluster) %>%
+  summarise(genes = list(unique(gene))) %>%
+  deframe()
+
+common_clusters <- intersect(names(harber_genes_by_cluster), names(combi_genes_by_cluster))
+
+# Create a list of gene sets per cluster
+gene_sets_per_cluster <- map(common_clusters, function(clust) {
+  list(
+    RNA_reference = harber_genes_by_cluster[[clust]],
+    sciMeDseq  = combi_genes_by_cluster[[clust]]
+  )
+}) %>%
+  setNames(common_clusters)
+
+# Create Venn diagram per cluster
+for (clust in names(gene_sets_per_cluster)) {
+  genes <- gene_sets_per_cluster[[clust]]
+  
+  venn.plot <- venn.diagram(
+    x = genes,
+    category.names = names(genes),
+    filename = paste0("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Combi_small_intestine/seurat/venn2_cluster_", clust, ".png"),
+    output = TRUE,
+    main = paste("Cluster", clust),
+    imagetype = "png",
+    height = 400,
+    width = 400,
+    resolution = 100,
+    fill = c("RNA_reference" = "#0072B2", "sciMeDseq" = "#E69F00")
+  )
+}
+
+# Label datasets
+harber_markers <- integrated_seurat_harbersub_markers_sub %>%
+  mutate(dataset = "RNA_reference")
+
+combi_markers <- integrated_seurat_combisub_markers %>%
+  mutate(dataset = "sciMeDseq")
+
+# Combine both
+all_markers <- bind_rows(harber_markers, combi_markers) %>%
+  filter(!is.na(avg_log2FC))  # remove NAs if present
+
+# Make sure this directory exists or change it
+output_dir <- "/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/"
+# Get unique clusters
+clusters <- unique(all_markers$cluster)
+
+# Loop through each cluster and save individual plots
+for (cl in clusters) {
+  # Filter data for the current cluster
+  df_sub <- all_markers %>% filter(cluster == cl)
+
+  # Create plot
+  p <- ggplot(df_sub, aes(x = avg_log2FC, fill = dataset)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 50) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "red")+
+  labs(title = cl,
+       x = "log2 Fold Change",
+       y = "Number of Genes") +
+  scale_fill_manual(values = c("RNA_reference" = "#0072B2", "sciMeDseq" = "#E69F00")) +
+      theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1)) 
+
+
+# Remove legend from plot
+  p_nolegend <- p + theme(legend.position = "none")
+  ggsave(
+    filename = file.path(output_dir, paste0("LogFC_markergenes_DCM_RNA_", cl, ".png")),
+    plot = p_nolegend,
+    width = 2, height = 2, dpi = 300
+  )
+}
+
+  # Save the plot
+  g <- ggplotGrob(p)
+
+# Extract all legend boxes
+  legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+  legend_combined <- legends[[1]]  # Usually contains both
+
+ggsave(file.path(output_dir,"LogFC_markergenes_DCM_RNA_legend.png"),legend_combined,  dpi=300, width = 5, height = 0.3)
+
+
+cluster_counts <- integrated_seurat_combi_markers_sub %>%
+  group_by(cluster) %>%
+  summarise(n_above_0.5 = sum(avg_log2FC > 0.5, na.rm = TRUE)) %>%
+  mutate(cluster_label = paste0(cluster, " (log2FC>2 = ", n_above_0.5, ")"))
+
+# Step 2: Join back to original data
+data_markers <- integrated_seurat_combi_markers %>%
+  left_join(cluster_counts, by = "cluster")
+
+# Step 3: Plot using new label for facet
+ggplot(data_markers, aes(x = avg_log2FC)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 50, fill = "#0072B2") +
+  facet_wrap(~ cluster_label, scales = "free_y") +
+  geom_vline(xintercept = 0.5, linetype = "dashed", colour = "red") +
+  labs(title = "log2 Fold Change Distribution per Cluster",
+       x = "log2 Fold Change",
+       y = "Number of Genes") +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1)) 
+ggsave("/media/erlantz/71DE167A75E99BB4/Pool32/Combi/Combi_small_intestine/seurat/log2FC_distribution_cluster_combi_reference_integrated.png", width = 8, height = 5)
+```
+##Dot plot
+```{r}
+
+
+top_overlap_genes <- lapply(gene_sets_per_cluster, function(genes) {
+  intersect_genes <- intersect(genes$RNA_reference, genes$sciMeDseq)
+  head(intersect_genes, 10)
+})
+desired_order <- c("ISC", "TA_ISC", "Enterocyte", "Paneth",  "Goblet",  "Tuft","Enteroendocrine")
+desired_order2 <- c("ISC", "TA/ISC", "Enterocyte", "Paneth",  "Goblet",  "Tuft","Enteroendocrine")
+
+# Reorder the list
+top_overlap_genes2 <- top_overlap_genes[desired_order]
+
+all_top_genes <- unique(unlist(top_overlap_genes2))
+
+integrated_seurat_combi_subharber$cell_identity_int2 <- factor(integrated_seurat_combi_subharber$cell_identity_int2, levels = desired_order2)
+
+p <- DotPlot(integrated_seurat_combi_subharber, 
+        features = all_top_genes, 
+        group.by = "cell_identity_int2",  
+        scale.by = "size",
+        dot.scale = 5, 
+        scale = T) +
+    RotatedAxis() + 
+  scale_colour_gradientn(colours = c( "white","lightblue", "darkred"))+
+  #scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu")))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("DCM-RNA Overlapping Marker Genes in RNA Reference")+
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    #legend.position = "top",
+    #legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(ncol = 1)) 
+
+  # Save the plot
+  g <- ggplotGrob(p)
+
+# Extract all legend boxes
+  legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+  legend_combined <- legends[[1]]  # Usually contains both
+
+ggsave(file.path(output_dir,"dotplot_RNAref_legend.png"),legend_combined,  dpi=300, width = 0.75, height = 2)
+  p_nolegend <- p + theme(legend.position = "none")
+
+ggsave(file.path(output_dir,"dotplot_marker_genes_integration_reference.png"), p,dpi=300, width = 9, height = 3)
+
+
+integrated_seurat_combi_subcombi$cell_identity_int2 <- factor(integrated_seurat_combi_subcombi$cell_identity_int2, levels = desired_order2)
+
+p <- DotPlot(integrated_seurat_combi_subcombi, 
+        features = all_top_genes, 
+        group.by = "cell_identity_int2",
+       scale.by = "size",
+        dot.scale = 5, 
+        scale = T) +
+  RotatedAxis() + 
+  scale_colour_gradientn(colours = c( "white","lightblue", "darkred"))+
+  ggtitle("DCM-RNA Overlapping Marker Genes in sciMeDseq")+
+     theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    #legend.position = "top",
+    #legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(ncol = 1)) 
+  # Save the plot
+  g <- ggplotGrob(p)
+
+# Extract all legend boxes
+  legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+  legend_combined <- legends[[1]]  # Usually contains both
+
+ggsave(file.path(output_dir,"dotplot_dcmCombi_legend.png"),legend_combined,  dpi=300, width = 0.75, height = 2)
+  p_nolegend <- p + theme(legend.position = "none")
+
+ggsave(file.path(output_dir,"dotplot_marker_genes_integration_dcmcombi.png"), p,dpi=300,width = 9, height = 3)
+
+
+
+```
+
+#keeping cells above MS
+
+```{r}
+meta_data_combi_dcm <- meta_data[meta_data$dataset == "sciMeDseq",]
+meta_data_combi_dcm[module_score_cols] <- lapply(meta_data_combi_dcm[module_score_cols], function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+})
+meta_data_combi_dcm <- meta_data_combi_dcm %>%
+  rowwise() %>%
+  mutate(
+    max_score_cell_type = module_score_cols[which.max(c_across(all_of(module_score_cols)))],
+    Keep_or_Out = ifelse(cell_identity_int2 == sub("1$", "", max_score_cell_type), "Keep", "Out")  ) %>%
+  ungroup()
+
+meta_data_combi_dcm_filtered <- meta_data_combi_dcm %>% filter(Keep_or_Out == "Keep")
+
+table(meta_data_combi_dcm_filtered$cell_identity_int2)
+
+
+
+meta_data_combi_dcm_filtered$FACS <- "Enterocyte"
+
+cell_annotation_integration_types <- data.frame(table(meta_data_combi_dcm_filtered$cell_identity_int2, meta_data_combi_dcm_filtered$FACS))
+cell_annotation_integration_types <- cell_annotation_integration_types[order(cell_annotation_integration_types$Var2),]
+cell_annotation_integration_types$per <- NA
+cell_annotation_integration_types$Var1 <- factor(cell_annotation_integration_types$Var1, levels = desired_order2)
+
+calculate_chunk_percentages <- function(df, chunk_size = 7) {
+  percentages <- c()
+  for (i in seq(1, nrow(df), by = chunk_size)) {
+    chunk <- df[i:(i + chunk_size - 1), ]
+    total <- sum(chunk$Freq)
+    chunk_percentages <- if (total != 0) (chunk$Freq / total) * 100 else rep(0, chunk_size)
+    percentages <- c(percentages, chunk_percentages)
+  }
+  return(percentages)
+}
+
+cell_annotation_integration_types$per <- calculate_chunk_percentages(cell_annotation_integration_types)
+
+
+library(ggalluvial)
+publication_colors_27 <- c(
+ "#88CCEE", "#332288", "#117733","#999933", "#44AA99",   "#DDCC77", 
+  "#CC6677", "#882255", "#AA4499", "#DDDDDD", "#1F78B4", "#33A02C", 
+  "#E31A1C", "#FDBF6F", "#6A3D9A",  # Your original 15 colors
+  # New additions (12 colors):
+  "#A6CEE3", "#FF7F00", "#CAB2D6", "#FFFF99", "#B15928", "#8DD3C7",
+  "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9"
+)
+
+ggplot(data = cell_annotation_integration_types,
+       aes(axis1 = Var1, axis2 = Var2, y = per)) +
+  geom_alluvium(aes(fill = Var1)) +
+  scale_fill_manual(values = publication_colors_27)+
+  geom_stratum() +
+  #geom_text(size = 3, stat = "stratum",
+  #          aes(label = after_stat(stratum))) +
+     theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+   # plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    #axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    #axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+   # legend.text = element_text(size = 11),
+   # legend.title = element_text(face = "plain", size = 11),
+    #legend.position = "top",
+    #legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(ncol = 1)) 
+ggsave(file.path(output_dir,"After_filtering_transitions_dcm_RNA_notext.pdf"),width = 5, height = 7)
+
+
+
+
+```
+
+#Adding chase intestine
+
+```{r}
+Matrix_gene_DCM_chase <- read.table("/media/erlantz/Erlantz/Pool_37_combi_chase/Matrixes/Combi_intestine_noDup_rcMatrix_DCM_geneEnsemble.tsv", header = T, sep = "\t")
+Matrix_CpGisland_chase <- read.table("/media/erlantz/Erlantz/Pool_37_combi_chase/Matrixes/Combi_intestine_noDup_rcMatrix_CpG-M_CpGIsland.tsv", header = T, sep = "\t")
+rownames(Matrix_CpGisland_chase) <- Matrix_CpGisland_chase$gene
+Matrix_CpGisland_chase$gene <- NULL
+Matrix_CpGisland_chase$region_ID <- NULL
+
+colSums(Matrix_CpGisland_chase)
+write.csv(colSums(Matrix_CpGisland_chase), "/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Matrix_CpGisland_chase.csv")
+
+Matrix_gene_DCM_chase$region_ID <- NULL
+
+
+Matrix_gene_DCM_chase <- Matrix_gene_DCM_chase %>%
+  group_by(gene) %>%
+  summarise(across(everything(), sum))
+Matrix_gene_DCM_chase <- data.frame(Matrix_gene_DCM_chase)
+rownames(Matrix_gene_DCM_chase) <- Matrix_gene_DCM_chase$gene
+Matrix_gene_DCM_chase$gene <- NULL 
+
+colSums(Matrix_gene_DCM_chase)
+write.csv(colSums(Matrix_gene_DCM_chase), "/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Matrix_gene_intestine_chase_DCM.csv")
+
+#Count gene number
+Matrix_gene_DCM_gene_number_chase <- sapply(Matrix_gene_DCM_chase, function(x) sum(x > 0))
+Matrix_CpGisland_number_of_CpGislands_chase <- sapply(Matrix_CpGisland_chase, function(x) sum(x > 0))
+
+
+write.csv(Matrix_gene_DCM_gene_number_chase, "/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Matrix_gene_DCM_gene_intestine_chase_number.csv")
+write.csv(Matrix_CpGisland_number_of_CpGislands_chase, "/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Matrix_intestine_chase_CpGisland_number_of_CpGislands.csv")
+
+```
+
+#histo plot
+```{r}
+library(ggplot2)
+Stats_intestine_chase <- read.csv("/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Combi_chase_intestine_stats.csv", header = T, sep = ",")
+ano_intestine_combi_chase <- read.table("/media/erlantz/Erlantz/Pool_37_combi_chase/stats/Combi_intestine_cell_stats.tsv", header = T, sep = "\t")
+ano_intestine_combi_chase$condition <- "48h_Dox_72h_chase"
+
+
+d <- density(log10(ano_intestine_combi_chase$readcount), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3.5 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#377EB8", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.10, size = 3) +
+  labs(
+    title = "48h Dox 72h Chase",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+       theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+ggsave("/media/erlantz/Erlantz/Pool_37_combi_chase/Figures/local_minima_histogram_combi_intestine_chase.png", dpi=300, width = 3.5, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/local_minima_histogram_combi_intestine_chase.pdf", dpi=300, width = 3.5, height = 2)
+
+ano_intestine_combi_chase_sub <- ano_intestine_combi_chase[log10(ano_intestine_combi_chase$readcount) > 3.95,]
+
+
+```
+
+#UMAP
+
+```{r}
+
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(scCustomize)
+library(gridExtra)
+library(tibble)
+library(scater)
+library(cluster)
+
+
+Stats_intestine_chase
+Matrix_gene_DCM_chase
+Stats_intestine_chase$Barcode_DCM <- paste0("X",Stats_intestine_chase$Barcode)
+Stats_intestine_chase$selected <- log10(Stats_intestine_chase$Annotated) > 3.95
+Stats_intestine_chase_sub <- Stats_intestine_chase[Stats_intestine_chase$selected == TRUE,]
+Stats_intestine_chase_sub2 <- Stats_intestine_chase_sub[Stats_intestine_chase_sub$DCM_genes > 300,]
+
+Matrix_gene_DCM_chase_sub <- Matrix_gene_DCM_chase[,match(Stats_intestine_chase_sub2$Barcode_DCM, colnames(Matrix_gene_DCM_chase))]
+rownames(Stats_intestine_chase_sub2) <- Stats_intestine_chase_sub2$Barcode_DCM
+
+combi_intestine_chase_seurat <- CreateSeuratObject(Matrix_gene_DCM_chase_sub, min.features = 300, min.cells = 3, project = "DCM_combi", meta.data = Stats_intestine_chase_sub2) %>% # only take cells with more than 2000 genes, can make it more strict (i believe 3000 is "standard", but really depends on cell type if you ask me)
+  PercentageFeatureSet(pattern = "^mt-", col.name = "percent.mt")
+
+VlnPlot(combi_intestine_chase_seurat, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+is_outlier_nFeature <- isOutlier(combi_intestine_chase_seurat$nFeature_RNA, type = "both", nmads = 2)
+is_outlier_nCount <- isOutlier(combi_intestine_chase_seurat$nCount_RNA, type = "both", nmads = 2)
+
+cells_keep <- !(is_outlier_nFeature | is_outlier_nCount)
+
+# Subset the original Seurat object
+combi_intestine_chase_seurat_filtered <- subset(
+  combi_intestine_chase_seurat,
+  cells = colnames(combi_intestine_chase_seurat)[cells_keep]
+)
+VlnPlot(combi_intestine_chase_seurat_filtered, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+
+combi_intestine_chase_seurat_filtered <- NormalizeData(combi_intestine_chase_seurat_filtered)
+combi_intestine_chase_seurat_filtered <- FindVariableFeatures(combi_intestine_chase_seurat_filtered)
+combi_intestine_chase_seurat_filtered <- ScaleData(combi_intestine_chase_seurat_filtered)
+combi_intestine_chase_seurat_filtered <- SCTransform(combi_intestine_chase_seurat_filtered)
+combi_intestine_chase_seurat_filtered <- RunPCA(combi_intestine_chase_seurat_filtered)
+combi_intestine_chase_seurat_filtered <- FindNeighbors(combi_intestine_chase_seurat_filtered, dims = 1:5, reduction = "pca")
+
+combi_intestine_chase_seurat_filtered <- RunUMAP(combi_intestine_chase_seurat_filtered, dims = 1:5, verbose = FALSE)
+combi_intestine_chase_seurat_filtered <- FindClusters(combi_intestine_chase_seurat_filtered, resolution = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8), cluster.name = c("unintegrated_clusters_0.1","unintegrated_clusters_0.2","unintegrated_clusters_0.3", "unintegrated_clusters_0.4", "unintegrated_clusters_0.5", "unintegrated_clusters_0.6", "unintegrated_clusters_0.7", "unintegrated_clusters_0.8"))
+DimPlot(combi_intestine_chase_seurat_filtered, group.by = c("unintegrated_clusters_0.6" ,"unintegrated_clusters_0.7")) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 8, face = "bold"),
+    plot.title = element_text(size =8, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 8, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 8, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.8),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/Erlantz/Pool_37_combi_chase/Plots/Umap_per_cluster_combi_onlydcm_chase.png", width = 3, height = 3)
+
+Idents(combi_intestine_chase_seurat_filtered) <- "unintegrated_clusters_0.6"
+combi_intestine_seurat_chase_markers <-  FindAllMarkers(combi_intestine_chase_seurat_filtered, min.pct = 0.2, logfc.threshold = 0.2, only.pos = TRUE, assay = "SCT") #markers clustered by label
+combi_intestine_seurat_chase_markers_sub <- combi_intestine_seurat_chase_markers[combi_intestine_seurat_chase_markers$p_val_adj < 0.05 & combi_intestine_seurat_chase_markers$avg_log2FC > 0.5,]
+
+
+marker_dict_df3 <- list(
+  Enterocytes_litda = c( "Slc2a2", "Lct", "Slc43a2", "Alpi","Cbr1","Apoa1"),
+  ISC_1_litda = c("Axin2","Smoc2","Olfm4","Tnfrsf19","Cdca7","Bmi1","Lrig1","Hes1"),
+  ISC_2_litda = c("Mki67","Tert","Hes1","Birc5","H2ac24"),
+  Tuft_litda = c("Gfi1b","Trpm5", "Dclk1","Bmp2","Sox9","Stk11"),
+  EnteroEndocrine_litda = c("Chgb","Scg3","Foxo1","Sst","Cck","Chga","Neurod1","Pax4","Vwa5b2","Foxa2", "Wnt3"),
+  Paneth_litda = c("Lyz1", "Wnt3","Itln1","Mmp7","Atg7"),
+  Goblet_litda = c("Muc2", "Plcb1","Fcgbp","Gfi1","Spdef","Klf4","Dll4","Atoh1"))
+
+
+FeaturePlot(combi_intestine_chase_seurat_filtered, features = "nFeature_RNA")
+VlnPlot(combi_intestine_chase_seurat_filtered, assay = "SCT", features = marker_dict$ISC)
+VlnPlot(combi_intestine_chase_seurat_filtered, assay = "SCT", features = marker_dict_df3$ISC_1_litda)
+
+
+
+```
+#Integration
+
+```{r}
+batch_list3 <- readRDS(file = "/media/erlantz/71DE167A75E99BB4/Pool_35/Harber/Large_harber_plate_integration/Atlas_Large_plates_RNA_DCM_list.rds")
+DefaultAssay(combi_intestine_seurat) <- "RNA"
+
+batch_list4_chase <- batch_list3
+batch_list4_chase$RNA_plate <- NULL
+batch_list4_chase$DCM_plate <- NULL
+batch_list4_chase$DCM_combi <- combi_intestine_seurat
+batch_list4_chase$DCM_combi_chase <- combi_intestine_chase_seurat_filtered
+
+batch_list4_chase <- lapply(batch_list4_chase, function(obj) {
+  obj <- NormalizeData(obj)
+  obj <- FindVariableFeatures(obj, selection.method = "vst")
+  return(obj)
+})
+
+# Find integration anchors (takes time for large datasets)
+integration_features_chase <- SelectIntegrationFeatures(object.list = batch_list4_chase)
+anchors_chase <- FindIntegrationAnchors(
+  object.list = batch_list4_chase,
+  anchor.features = integration_features_chase,
+  dims = 1:15  # Adjust based on your PCA results
+)
+
+integrated_seurat_combi_chase <- IntegrateData(anchorset = anchors_chase, dims = 1:15, k.weight = 70)
+
+# Switch to integrated assay (important!)
+DefaultAssay(integrated_seurat_combi_chase) <- "integrated"
+
+# Scale data and run PCA
+integrated_seurat_combi_chase <- ScaleData(integrated_seurat_combi_chase)
+integrated_seurat_combi_chase <- RunPCA(integrated_seurat_combi_chase, npcs = 50)
+
+# Check batch effect correction (batches should mix well in PCA)
+DimPlot(integrated_seurat_combi_chase, reduction = "pca", group.by = "orig.ident")
+integrated_seurat_combi_chase$Batch[is.na(integrated_seurat_combi_chase$Batch)] <- "combi"
+
+integrated_seurat_combi_chase <- FindNeighbors(integrated_seurat_combi_chase, dims = 1:20, reduction = "pca")
+integrated_seurat_combi_chase <- FindClusters(integrated_seurat_combi_chase, resolution = c(0.01,0.05,0.1,0.15,0.2,0.3,0.6), cluster.name = c("unintegrated_clusters_0.01","unintegrated_clusters_0.05","unintegrated_clusters_0.1","unintegrated_clusters_0.15", "unintegrated_clusters_0.2", "unintegrated_clusters_0.3","unintegrated_clusters_0.6"))
+integrated_seurat_combi_chase <- RunUMAP(integrated_seurat_combi_chase, dims = 1:20, verbose = FALSE)
+DimPlot(integrated_seurat_combi_chase, reduction = "umap", group.by = c( "celltype","Batch","unintegrated_clusters_0.6"), cols = publication_colors_27, pt.size = 0.5)
+
+table(integrated_seurat_combi_chase$celltype, integrated_seurat_combi_chase$unintegrated_clusters_0.6)
+ct_table <- table(integrated_seurat_combi_chase$celltype, integrated_seurat_combi_chase$unintegrated_clusters_0.6)
+
+# Draw the heatmap
+png("/media/erlantz/Erlantz/Pool_37_combi_chase/Plots/heatmap_seurat_clusters_celltype_chase.png", width = 1000, height = 500, units = "px")
+pheatmap(ct_table,
+         cluster_rows = TRUE,
+         cluster_cols = F,
+         display_numbers = TRUE,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         main = "Cell Type vs Unintegrated Clusters Heatmap")
+dev.off()
+FeaturePlot(integrated_seurat_combi_chase, features = c("Lct","Lgr5","Mki67","Dclk1","Fcgbp","Neurod1","Lyz1","Itln1","Atg7","Defa23"), cols = c("gray","#0C777A"))
+
+integrated_seurat_combi_chase$cell_identity_int2 <- recode(integrated_seurat_combi_chase$unintegrated_clusters_0.6,
+                     "0" = "TA_ISC",
+                     "1" = "ISC",
+                     "2" = "TA_ISC",
+                     "3" = "Goblet",
+                     "4" = "TA_ISC",
+                     "5" = "TA",
+                     "6" = "ISC",
+                     "7" = "Enterocyte",
+                     "8" = "Paneth",
+                     "9" = "ISC",
+                     "10" = "ISC" ,
+                     "11" = "Enterocyte" ,
+                     "12" = "Enterocyte",
+                     "13" = "Goblet" ,
+                     "14" = "Tuft" ,
+                     "15" = "Enterocyte",
+                     "16" = "EEC" ,
+                     "17" = "Paneth")
+
+integrated_seurat_combi_chase$Batch[17613:18007] <- "Pulse_DCM"
+integrated_seurat_combi_chase$Batch[18008:18468] <- "Chase_DCM"
+
+integrated_seurat_combi_chase$dataset <- recode(integrated_seurat_combi_chase$Batch,
+                     "B1" = "RNA_reference",
+                     "B2" = "RNA_reference",
+                     "B3" = "RNA_reference",
+                     "B4" = "RNA_reference",
+                     "B5" = "RNA_reference",
+                     "B6" = "RNA_reference",
+                     "B7" = "RNA_reference",
+                     "B8" = "RNA_reference",
+                     "B9" = "RNA_reference",
+                     "B10" = "RNA_reference" ,
+                     "M1" = "RNA_reference" ,
+                     "M2" = "RNA_reference",
+                     "Pulse_DCM" = "Combi_Pulse",
+                     "Chase_DCM" = "Combi_Chase")
+
+DimPlot(integrated_seurat_combi_chase, reduction = "umap", group.by = c( "dataset"), cols = publication_colors_27, pt.size = 0.2) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    plot.title =  element_blank(),
+    axis.text =  element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line =  element_blank(),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "bold", size = 11),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/umap_combi_integration_reference_dataset.png", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/umap_combi_integration_reference_dataset.svg", dpi=300, width = 3, height = 2)
+DimPlot(integrated_seurat_combi_chase, reduction = "umap", group.by = c( "cell_identity_int2"), cols = publication_colors_27, pt.size = 0.2) &
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    plot.title =  element_blank(),
+    axis.text =  element_blank(),
+    axis.ticks =  element_blank(),
+    axis.title = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line =  element_blank(),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "bold", size = 11),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.5, "cm"))
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/umap_combi_integration_reference_celltype.svg", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure2/illustrator/umap_combi_integration_reference_celltype.svg", dpi=300, width = 3, height = 2)
+```
+
+
+```{r}
+
+cell_counts_chase <- integrated_seurat_combi_chase@meta.data %>%
+  group_by(dataset, cell_identity_int2) %>%
+  summarise(count = n()) %>%
+  ungroup()
+cell_props_chase <- cell_counts_chase %>%
+  group_by(dataset) %>%
+  mutate(prop = count / sum(count))
+
+cell_props_chase$cell_identity_int2 <- factor(cell_props_chase$cell_identity_int2, levels = c("ISC","TA_ISC","Enterocyte","Goblet","Paneth","Tuft","Enteroendocrine"))
+
+# Plot stacked barplot
+ggplot(cell_props_chase, aes(x = dataset, y = prop, fill = cell_identity_int2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = publication_colors_27)+
+  labs(title = "",
+       x = "",
+       y = "Cell Proportion",
+       fill = "Cell Type") +
+    theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain",colour = "black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5,colour = "black"),
+    axis.text.x = element_text(size = 11, angle=45,face = "plain", hjust = 1,colour = "black"),
+    axis.text.y = element_text(size = 11, face = "plain", hjust = 1,colour = "black"),
+    axis.title = element_text(size = 11, face = "plain",colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+
+integrated_seurat_combi_chase_sub <- subset(integrated_seurat_combi_chase, dataset %in% c("Combi_Pulse","Combi_Chase"))
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(viridis)
+library(cowplot)
+library(scales)
+library(ggpubr)
+library(fisher.test)
+
+# Example 1: Basic comparison
+# Assuming your metadata has a column called "dataset" or "condition"
+ result <- compare_cluster_proportions(
+   seurat_obj = integrated_seurat_combi_chase_sub,
+   group_by = "dataset",  # Column name that defines your datasets
+   cluster_col = "cell_identity_int2",
+   statistical_test = TRUE,
+   plot_type = "all"
+ )
+ 
+ # View results
+ print(result$summary)  # Summary statistics
+ print(result$statistical_tests$overall_chisq)  # Chi-square test
+ print(result$plots$combined)  # All plots together
+# 
+# # Save plots
+ ggsave("cluster_proportions_comparison.pdf", result$plots$combined, 
+        width = 12, height = 10, dpi = 300)
+
+# Example 2: If you need to add dataset information
+ # Map samples to datasets
+ dataset_mapping <- c(
+   "sample1" = "Control",
+   "sample2" = "Control", 
+   "sample3" = "Treatment",
+   "sample4" = "Treatment"
+ )
+# 
+ seurat_obj <- add_dataset_info(seurat_obj, "dataset", dataset_mapping)
+# 
+ # Then run comparison
+ result <- compare_cluster_proportions(seurat_obj, group_by = "dataset")
+# Example 3: Focus on specific plot types
+ barplot_result <- compare_cluster_proportions(
+   seurat_obj = your_seurat_object,
+   group_by = "condition",
+   plot_type = "barplot"
+ )
+ print(barplot_result$plots$barplot)
+# Example 4: Export data for further analysis
+ write.csv(result$data, "cluster_proportions_data.csv", row.names = FALSE)
+ write.csv(result$summary, "cluster_proportions_summary.csv", row.names = FALSE)
+ Extract cluster + dataset info
+
+ 
+ 
+ result <- compare_cluster_proportions(
+  seurat_obj = integrated_seurat_combi_chase_sub,
+  group_by = "dataset",  # Your dataset/condition column
+  cluster_col = "cell_identity_int2",
+  statistical_test = TRUE,
+  plot_type = "all"
+)
+
+# Make barplot
+p <- ggplot(cluster_counts, aes(x = dataset, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~cell_identity_int2, scales = "free_y") +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Dataset",
+    y = "Proportion of cells",
+    title = "Cluster proportions per dataset"
+  ) +
+  scale_fill_brewer(palette = "Set1")
+
+print(p)
+
+# If you want to add significance labels:
+# Merge stats into cluster_counts
+sig_df <- cluster_stats %>%
+  select(cell_identity_int2, p) %>%
+  mutate(p.adj = p.adjust(p, method = "fdr")) %>%
+  mutate(label = case_when(
+    p.adj < 0.001 ~ "***",
+    p.adj < 0.01 ~ "**",
+    p.adj < 0.05 ~ "*",
+    TRUE ~ "ns"
+  ))
+
+sig_df
+
+ct_table2 <- table(integrated_seurat_combi_chase$cell_identity_int2, integrated_seurat_combi_chase$dataset)
+
+# Draw the heatmap
+png("/media/erlantz/Erlantz/Pool_37_combi_chase/Plots/heatmap_seurat_clusters_celltype_chase.png", width = 1000, height = 500, units = "px")
+pheatmap(ct_table2,
+         cluster_rows = TRUE,
+         cluster_cols = F,
+         display_numbers = TRUE,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         main = "Cell Type vs Unintegrated Clusters Heatmap")
+dev.off()
+
+```
+
+
+```{r}
+# Cluster proportion comparison between datasets
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(viridis)
+library(cowplot)
+library(scales)
+library(ggpubr)
+library(fisher.test)
+
+# ============================================================================
+# MAIN FUNCTION: Calculate and compare cluster proportions
+# ============================================================================
+
+compare_cluster_proportions <- function(seurat_obj,
+                                      group_by = "dataset",  # Column that defines your datasets
+                                      cluster_col = "seurat_clusters",
+                                      statistical_test = TRUE,
+                                      plot_type = "all") {  # "all", "barplot", "dotplot", "heatmap"
+  
+  # Get metadata
+  meta_data <- seurat_obj@meta.data
+  
+  # Check if columns exist
+  if (!group_by %in% colnames(meta_data)) {
+    stop(paste("Column", group_by, "not found in metadata"))
+  }
+  if (!cluster_col %in% colnames(meta_data)) {
+    stop(paste("Column", cluster_col, "not found in metadata"))
+  }
+  
+  # Calculate proportions
+  prop_data <- meta_data %>%
+    count(!!sym(group_by), !!sym(cluster_col), name = "n_cells") %>%
+    group_by(!!sym(group_by)) %>%
+    mutate(
+      total_cells = sum(n_cells),
+      proportion = n_cells / total_cells,
+      percentage = proportion * 100
+    ) %>%
+    ungroup()
+  
+  # Calculate overall statistics
+  summary_stats <- prop_data %>%
+    group_by(!!sym(cluster_col)) %>%
+    summarise(
+      mean_prop = mean(proportion),
+      sd_prop = sd(proportion),
+      mean_pct = mean(percentage),
+      sd_pct = sd(percentage),
+      .groups = 'drop'
+    )
+  
+  # Statistical testing if requested
+  stat_results <- NULL
+  if (statistical_test) {
+    stat_results <- perform_statistical_tests(prop_data, group_by, cluster_col)
+  }
+  
+  # Create plots
+  plots <- list()
+  
+  if (plot_type %in% c("all", "barplot")) {
+    plots$barplot <- create_proportion_barplot(prop_data, group_by, cluster_col)
+  }
+  
+  if (plot_type %in% c("all", "dotplot")) {
+    plots$dotplot <- create_proportion_dotplot(prop_data, group_by, cluster_col)
+  }
+  
+  if (plot_type %in% c("all", "heatmap")) {
+    plots$heatmap <- create_proportion_heatmap(prop_data, group_by, cluster_col)
+  }
+  
+  if (plot_type %in% c("all", "comparison")) {
+    plots$comparison <- create_comparison_plot(prop_data, group_by, cluster_col)
+  }
+  
+  # Combined plot
+  if (plot_type == "all") {
+    plots$combined <- plot_grid(
+      plots$barplot, plots$dotplot,
+      plots$heatmap, plots$comparison,
+      ncol = 2, align = "hv",
+      labels = c("A", "B", "C", "D")
+    )
+  }
+  
+  return(list(
+    data = prop_data,
+    summary = summary_stats,
+    statistical_tests = stat_results,
+    plots = plots
+  ))
+}
+
+# ============================================================================
+# PLOTTING FUNCTIONS
+# ============================================================================
+
+create_proportion_barplot <- function(prop_data, group_by, cluster_col) {
+  p <- ggplot(prop_data, aes_string(x = cluster_col, y = "percentage", fill = group_by)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+    geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+              position = position_dodge(width = 0.9), 
+              vjust = -0.3, size = 3) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "top",
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    ) +
+    labs(
+      title = "Cluster Proportions by Dataset",
+      x = "Cluster",
+      y = "Percentage of Cells (%)",
+      fill = "Dataset"
+    ) +
+    scale_fill_viridis_d(alpha = 0.8) +
+    scale_y_continuous(labels = percent_format(scale = 1))
+  
+  return(p)
+}
+
+create_proportion_dotplot <- function(prop_data, group_by, cluster_col) {
+  p <- ggplot(prop_data, aes_string(x = group_by, y = cluster_col)) +
+    geom_point(aes(size = percentage, color = percentage), alpha = 0.8) +
+    scale_size_continuous(name = "Percentage", range = c(2, 10)) +
+    scale_color_viridis_c(name = "Percentage") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    ) +
+    labs(
+      title = "Cluster Proportions - Dot Plot",
+      x = "Dataset",
+      y = "Cluster"
+    )
+  
+  return(p)
+}
+
+create_proportion_heatmap <- function(prop_data, group_by, cluster_col) {
+  # Reshape data for heatmap
+  heatmap_data <- prop_data %>%
+    select(!!sym(group_by), !!sym(cluster_col), percentage) %>%
+    pivot_wider(names_from = !!sym(group_by), values_from = percentage, values_fill = 0)
+  
+  # Convert to long format for ggplot
+  heatmap_long <- heatmap_data %>%
+    pivot_longer(-!!sym(cluster_col), names_to = group_by, values_to = "percentage")
+  
+  p <- ggplot(heatmap_long, aes_string(x = group_by, y = cluster_col, fill = "percentage")) +
+    geom_tile(color = "white", size = 0.5) +
+    geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+              color = ifelse(heatmap_long$percentage > 50, "white", "black"),
+              size = 3) +
+    scale_fill_viridis_c(name = "Percentage") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    ) +
+    labs(
+      title = "Cluster Proportions - Heatmap",
+      x = "Dataset",
+      y = "Cluster"
+    )
+  
+  return(p)
+}
+
+create_comparison_plot <- function(prop_data, group_by, cluster_col) {
+  # Calculate fold changes if there are exactly 2 datasets
+  datasets <- unique(prop_data[[group_by]])
+  
+  if (length(datasets) == 2) {
+    # Calculate fold change
+    wide_data <- prop_data %>%
+      select(!!sym(group_by), !!sym(cluster_col), percentage) %>%
+      pivot_wider(names_from = !!sym(group_by), values_from = percentage, values_fill = 0)
+    
+    wide_data$fold_change <- log2((wide_data[[datasets[2]]] + 0.1) / (wide_data[[datasets[1]]] + 0.1))
+    wide_data$abs_fold_change <- abs(wide_data$fold_change)
+    
+    p <- ggplot(wide_data, aes_string(x = cluster_col, y = "fold_change")) +
+      geom_col(aes(fill = fold_change > 0), alpha = 0.8) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+      geom_text(aes(label = round(fold_change, 2)), 
+                vjust = ifelse(wide_data$fold_change > 0, -0.3, 1.3), size = 3) +
+      scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "blue"),
+                       labels = c("TRUE" = paste("Higher in", datasets[2]),
+                                "FALSE" = paste("Higher in", datasets[1])),
+                       name = "Enrichment") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "top",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5, face = "bold")
+      ) +
+      labs(
+        title = paste("Log2 Fold Change:", datasets[2], "vs", datasets[1]),
+        x = "Cluster",
+        y = "Log2 Fold Change"
+      )
+  } else {
+    # For more than 2 datasets, create a line plot
+    p <- ggplot(prop_data, aes_string(x = cluster_col, y = "percentage", color = group_by, group = group_by)) +
+      geom_line(size = 1.2, alpha = 0.8) +
+      geom_point(size = 3, alpha = 0.8) +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "top",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5, face = "bold")
+      ) +
+      labs(
+        title = "Cluster Proportions Across Datasets",
+        x = "Cluster",
+        y = "Percentage of Cells (%)",
+        color = "Dataset"
+      ) +
+      scale_color_viridis_d() +
+      scale_y_continuous(labels = percent_format(scale = 1))
+  }
+  
+  return(p)
+}
+
+# ============================================================================
+# STATISTICAL TESTING
+# ============================================================================
+
+perform_statistical_tests <- function(prop_data, group_by, cluster_col) {
+  # Get unique datasets and clusters
+  datasets <- unique(prop_data[[group_by]])
+  clusters <- unique(prop_data[[cluster_col]])
+  
+  if (length(datasets) < 2) {
+    warning("Need at least 2 datasets for statistical testing")
+    return(NULL)
+  }
+  
+  # Perform chi-square test for overall differences
+  contingency_table <- prop_data %>%
+    select(!!sym(group_by), !!sym(cluster_col), n_cells) %>%
+    pivot_wider(names_from = !!sym(group_by), values_from = n_cells, values_fill = 0) %>%
+    column_to_rownames(cluster_col) %>%
+    as.matrix()
+  
+  # Overall chi-square test
+  chisq_result <- chisq.test(contingency_table)
+  
+  # Pairwise comparisons for each cluster (if exactly 2 datasets)
+  pairwise_results <- NULL
+  if (length(datasets) == 2) {
+    pairwise_results <- data.frame(
+      cluster = character(),
+      dataset1 = character(),
+      dataset2 = character(),
+      prop1 = numeric(),
+      prop2 = numeric(),
+      p_value = numeric(),
+      significant = logical(),
+      stringsAsFactors = FALSE
+    )
+    
+    for (clust in clusters) {
+      clust_data <- prop_data[prop_data[[cluster_col]] == clust, ]
+      
+      if (nrow(clust_data) == 2) {  # Both datasets have this cluster
+        # Fisher's exact test or proportion test
+        n1 <- clust_data$n_cells[1]
+        n2 <- clust_data$n_cells[2]
+        total1 <- clust_data$total_cells[1]
+        total2 <- clust_data$total_cells[2]
+        
+        # Two-proportion z-test
+        prop_test <- prop.test(c(n1, n2), c(total1, total2))
+        
+        pairwise_results <- rbind(pairwise_results, data.frame(
+          cluster = clust,
+          dataset1 = datasets[1],
+          dataset2 = datasets[2],
+          prop1 = clust_data$proportion[1],
+          prop2 = clust_data$proportion[2],
+          p_value = prop_test$p.value,
+          significant = prop_test$p.value < 0.05,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+  
+  return(list(
+    overall_chisq = chisq_result,
+    pairwise_tests = pairwise_results
+  ))
+}
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+# Function to add dataset information if not present
+add_dataset_info <- function(seurat_obj, dataset_column, dataset_mapping) {
+  # dataset_mapping should be a named vector: c("sample1" = "dataset1", "sample2" = "dataset1", ...)
+  
+  if (!"orig.ident" %in% colnames(seurat_obj@meta.data)) {
+    stop("orig.ident column not found. Cannot map datasets.")
+  }
+  
+  seurat_obj@meta.data[[dataset_column]] <- dataset_mapping[seurat_obj@meta.data$orig.ident]
+  
+  return(seurat_obj)
+}
+
+# Function to create summary table
+create_summary_table <- function(comparison_result) {
+  summary_table <- comparison_result$data %>%
+    select(dataset = 1, cluster = 2, n_cells, total_cells, percentage) %>%
+    arrange(cluster, dataset)
+  
+  return(summary_table)
+}
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+
+# Example 1: Basic comparison
+# Assuming your metadata has a column called "dataset" or "condition"
+# result <- compare_cluster_proportions(
+#   seurat_obj = your_seurat_object,
+#   group_by = "dataset",  # Column name that defines your datasets
+#   cluster_col = "seurat_clusters",
+#   statistical_test = TRUE,
+#   plot_type = "all"
+# )
+# 
+# # View results
+# print(result$summary)  # Summary statistics
+# print(result$statistical_tests$overall_chisq)  # Chi-square test
+# print(result$plots$combined)  # All plots together
+# 
+# # Save plots
+# ggsave("cluster_proportions_comparison.pdf", result$plots$combined, 
+#        width = 12, height = 10, dpi = 300)
+
+# Example 2: If you need to add dataset information
+# # Map samples to datasets
+# dataset_mapping <- c(
+#   "sample1" = "Control",
+#   "sample2" = "Control", 
+#   "sample3" = "Treatment",
+#   "sample4" = "Treatment"
+# )
+# 
+# seurat_obj <- add_dataset_info(seurat_obj, "dataset", dataset_mapping)
+# 
+# # Then run comparison
+# result <- compare_cluster_proportions(seurat_obj, group_by = "dataset")
+
+# Example 3: Focus on specific plot types
+# barplot_result <- compare_cluster_proportions(
+#   seurat_obj = your_seurat_object,
+#   group_by = "condition",
+#   plot_type = "barplot"
+# )
+# print(barplot_result$plots$barplot)
+
+# Example 4: Export data for further analysis
+# write.csv(result$data, "cluster_proportions_data.csv", row.names = FALSE)
+# write.csv(result$summary, "cluster_proportions_summary.csv", row.names = FALSE)
+
+cat("
+USAGE INSTRUCTIONS:
+
+1. BASIC SETUP:
+   Your Seurat object metadata should contain:
+   - A column defining datasets/conditions (e.g., 'dataset', 'condition', 'treatment')
+   - Cluster assignments (usually 'seurat_clusters')
+
+2. MAIN FUNCTION:
+   compare_cluster_proportions() creates comprehensive comparison
+   - Calculates proportions and percentages
+   - Performs statistical tests
+   - Creates multiple visualization types
+
+3. PLOT TYPES:
+   - Barplot: Side-by-side bars showing percentages
+   - Dotplot: Bubble plot with size/color = proportion  
+   - Heatmap: Grid showing all comparisons
+   - Comparison: Fold changes (2 datasets) or line plot (>2 datasets)
+
+4. STATISTICAL TESTING:
+   - Overall chi-square test for independence
+   - Pairwise proportion tests for each cluster
+   - Significance testing included
+
+5. OUTPUTS:
+   - Raw data with counts and proportions
+   - Summary statistics
+   - Statistical test results  
+   - Publication-ready plots
+
+6. TYPICAL WORKFLOW:
+   a) Ensure your metadata has dataset labels
+   b) Run compare_cluster_proportions()
+   c) Examine statistical significance
+   d) Export plots and data tables
+   e) Include in manuscript with proper statistics
+")
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

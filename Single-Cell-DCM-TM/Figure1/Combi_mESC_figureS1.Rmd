@@ -1,0 +1,875 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+#Metagenes
+
+```{r}
+low_DCM_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/low_25/minus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+low_DCM_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/low_25/Plus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+middle_DCM_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/middle_50/minus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+middle_DCM_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/middle_50/Plus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+high_DCM_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/high_25/minus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+high_DCM_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/high_25/Plus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+top10_DCM_plus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top10/Plus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+top10_DCM_minus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top10/minus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+bottom10_DCM_minus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/bottom_10/minus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+bottom10_DCM_plus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/bottom_10/Plus_Dox_combi_noDup_modified_DCM_rcSite_GraphOutput.txt")
+
+#1076255	minus_Dox_combi_noDup_modified_CpG-M.sam
+#109702	minus_Dox_combi_noDup_modified_DCM.sam
+
+#2318233	Plus_Dox_combi_noDup_modified_CpG-M.sam
+#1327730	Plus_Dox_combi_noDup_modified_DCM.sam
+
+
+low_DCM_minus$Norm_DCM <- low_DCM_minus$V2 / (109702)*1000000
+middle_DCM_minus$Norm_DCM <- middle_DCM_minus$V2 / (109702)*1000000
+high_DCM_minus$Norm_DCM <- high_DCM_minus$V2 / (109702)*1000000
+top10_DCM_minus$Norm_DCM <- top10_DCM_minus$V2 / (109702)*1000000
+bottom10_DCM_minus$Norm_DCM <- bottom10_DCM_minus$V2 / (109702)*1000000
+
+low_DCM_plus$Norm_DCM <- low_DCM_plus$V2 / (1327730)*1000000
+middle_DCM_plus$Norm_DCM <- middle_DCM_plus$V2 / (1327730)*1000000
+high_DCM_plus$Norm_DCM <- high_DCM_plus$V2 / (1327730)*1000000
+top10_DCM_plus$Norm_DCM <- top10_DCM_plus$V2 / (1327730)*1000000
+bottom10_DCM_plus$Norm_DCM <- bottom10_DCM_plus$V2 / (1327730)*1000000
+
+library(reshape2)
+plus_minus_ESC_DCM <- data.frame(Position=low_DCM_minus$V1,
+                               top_plus=high_DCM_plus$Norm_DCM,
+                           bottom_plus=low_DCM_plus$Norm_DCM,
+                           top_minus=high_DCM_minus$Norm_DCM,
+                           bottom_minus=low_DCM_minus$Norm_DCM)
+plus_minus_ESC_DCM_melt <- melt(plus_minus_ESC_DCM, id.vars = "Position")
+
+plus_minus_ESC_DCM_melt$variable <- factor(plus_minus_ESC_DCM_melt$variable, levels = c("top_plus","bottom_plus","top_minus","bottom_minus"))
+split_vars <- strsplit(as.character(plus_minus_ESC_DCM_melt$variable), "_")
+
+# Convert the list into a data frame with two columns
+split_df <- do.call(rbind, split_vars)
+colnames(split_df) <- c("Gene_level", "Doxyxycline")  # Rename as desired
+
+# Add these columns to the original data frame
+plus_minus_ESC_DCM_melt$Gene_level <- split_df[, 1]
+plus_minus_ESC_DCM_melt$Doxyxycline <- split_df[, 2]
+
+plus_minus_ESC_DCM_melt$Doxyxycline <- factor(plus_minus_ESC_DCM_melt$Doxyxycline, levels = c("plus","minus"))
+plus_minus_ESC_DCM_melt$Gene_level <- factor(plus_minus_ESC_DCM_melt$Gene_level, levels = c("top","bottom"))
+
+p <- ggplot(plus_minus_ESC_DCM_melt, aes(x = Position, y = value, color=Doxyxycline,linetype = Gene_level)) +
+  geom_line(linewidth = 0.5) +
+  ylab("(DCM Reads / Sites)/DCM depth")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#377EB8","#A50F15"), name = "Gene sets",labels = c("Plus Dox", "Minus Dox"))+
+    scale_linetype_manual(
+    values = c("solid", "dashed"),   # Adjust as needed
+    name = "Gene Level",
+    labels = c("Top 25%", "Bottom 25%")# Legend title for linetype
+  ) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+p_nolegend <- p + theme(legend.position = "none")
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top_bottom_plus_minus_metagene_DCM_V2.png",p_nolegend, dpi=300,width = 3, height = 2.5)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top_bottom_plus_minus_metagene_DCM_V2_legend.png",legend_combined, dpi=300,width = 6, height = 0.3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/top_bottom_plus_minus_metagene_DCM_V2.svg",p, dpi=300,width = 7, height = 4)
+
+#CpG plot
+low_CpG_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/low_25/minus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+low_CpG_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/low_25/Plus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+middle_CpG_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/middle_50/minus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+middle_CpG_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/middle_50/Plus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+high_CpG_minus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/high_25/minus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+high_CpG_plus <- read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/high_25/Plus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+top10_CpG_plus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top10/Plus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+top10_CpG_minus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top10/minus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+bottom10_CpG_minus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/bottom_10/minus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+bottom10_CpG_plus <-read.table("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/bottom_10/Plus_Dox_combi_noDup_modified_CpG-M_rcSite_GraphOutput.txt")
+low_CpG_minus$Norm_CpG <- low_CpG_minus$V2 / (1076255)*1000000
+middle_CpG_minus$Norm_CpG <- middle_CpG_minus$V2 / (1076255)*1000000
+high_CpG_minus$Norm_CpG <- high_CpG_minus$V2 / (1076255)*1000000
+top10_CpG_minus$Norm_CpG <- top10_CpG_minus$V2 / (1076255)*1000000
+bottom10_CpG_minus$Norm_CpG <- bottom10_CpG_minus$V2 / (1076255)*1000000
+
+low_CpG_plus$Norm_CpG <- low_CpG_plus$V2 / (2318233)*1000000
+middle_CpG_plus$Norm_CpG<- middle_CpG_plus$V2 / (2318233)*1000000
+high_CpG_plus$Norm_CpG <- high_CpG_plus$V2 / (2318233)*1000000
+top10_CpG_plus$Norm_CpG <- top10_CpG_plus$V2 / (2318233)*1000000
+bottom10_CpG_plus$Norm_CpG <- bottom10_CpG_plus$V2 / (2318233)*1000000
+
+library(reshape2)
+plus_minus_ESC_CpG <- data.frame(Position=low_CpG_minus$V1,
+                               top_plus=high_CpG_plus$Norm_CpG,
+                           bottom_plus=low_CpG_plus$Norm_CpG,
+                           top_minus=high_CpG_minus$Norm_CpG,
+                           bottom_minus=low_CpG_minus$Norm_CpG)
+plus_minus_ESC_CpG_melt <- melt(plus_minus_ESC_CpG, id.vars = "Position")
+
+plus_minus_ESC_CpG_melt$variable <- factor(plus_minus_ESC_CpG_melt$variable, levels = c("top_plus","bottom_plus","top_minus","bottom_minus"))
+split_vars <- strsplit(as.character(plus_minus_ESC_CpG_melt$variable), "_")
+
+# Convert the list into a data frame with two columns
+split_df <- do.call(rbind, split_vars)
+colnames(split_df) <- c("Gene_level", "Doxyxycline")  # Rename as desired
+
+# Add these columns to the original data frame
+plus_minus_ESC_CpG_melt$Gene_level <- split_df[, 1]
+plus_minus_ESC_CpG_melt$Doxyxycline <- split_df[, 2]
+
+plus_minus_ESC_CpG_melt$Doxyxycline <- factor(plus_minus_ESC_CpG_melt$Doxyxycline, levels = c("plus","minus"))
+plus_minus_ESC_CpG_melt$Gene_level <- factor(plus_minus_ESC_CpG_melt$Gene_level, levels = c("top","bottom"))
+
+f <- ggplot(plus_minus_ESC_CpG_melt, aes(x = Position, y = value, color=Doxyxycline,linetype = Gene_level)) +
+  geom_line(linewidth = 0.5) +
+  ylab("(CpG Reads / Sites)/CpG depth")+
+  xlab("")+
+  scale_x_continuous(breaks = c(0, 100, 200, 300),
+                     labels = c("", "TSS", "TES",""))+
+  scale_color_manual(values = c("#377EB8","#A50F15"), name = "Gene sets",labels = c("Plus Dox", "Minus Dox"))+
+    scale_linetype_manual(
+    values = c("solid", "dashed"),   # Adjust as needed
+    name = "Gene Level",
+    labels = c("Top 25%", "Bottom 25%")# Legend title for linetype
+  ) +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+g <- ggplotGrob(f)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+# Remove legend from plot
+p_nolegend <- f + theme(legend.position = "none")
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top_bottom_plus_minus_metagene_CpG_V2.png",p_nolegend, dpi=300,width = 3, height = 2.5)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Metagenes_DCM_CpG/top_bottom_plus_minus_metagene_CpG_V2_legend.png",legend_combined, dpi=300,width = 4.65, height = 0.3)
+
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/illustrator/top_bottom_plus_minus_metagene_CpG_V2.svg",f, dpi=300,width = 7, height = 4)
+
+```
+
+#scStats
+##bimodal distribution
+```{r}
+Pulse:"#377EB8"
+Minus:"#A50F15"
+gDNA_reads <- read.csv("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/stats_combi_run2_ESC.csv", sep = ",", header = T)
+
+gDNA_ano <- read.csv("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/plus_dox_minus_dox_annotated.csv", sep = "\t")
+ggplot(gDNA_ano, aes(x = log10(readcount), fill = Condition)) +
+  geom_histogram(position = "identity", alpha = 0.6, bins = 50, color = "black") +
+  scale_fill_manual(values = c("24h_Dox" = "#00441B", "Minus_Dox" = "#000000")) +
+  labs(
+    title = "Distribution of raw reads by Condition",
+    x = "log10(Annotated Reads)",
+    y = "Count",
+    fill = "Dox"
+  ) +
+ theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/bimodal_distribution_histogram_combi_plus_minus_annotated.png", dpi=300, width = 5, height = 3)
+
+gDNA_ano_plus <- gDNA_ano[gDNA_ano$Condition == "24h_Dox",]
+d <- density(log10(gDNA_ano_plus$readcount), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3.5 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#377EB8", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.50, size = 2) +
+  labs(
+    title = "24h Dox",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 0, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/local_minima_histogram_combi_plus_v2.png", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/local_minima_histogram_combi_plus_v2.svg", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/local_minima_histogram_combi_plus_v2.pdf", dpi=300, width = 3, height = 2)
+#for minus dox
+gDNA_ano_minus <- gDNA_ano[gDNA_ano$Condition == "Minus_Dox",]
+d <- density(log10(gDNA_ano_minus$readcount), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3.5 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#A50F15", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.50, size = 2) +
+  labs(
+    title = "Minus Dox",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 0, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/local_minima_histogram_combi_minus.png", dpi=300, width = 5, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/local_minima_histogram_combi_minus_v2.png", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/local_minima_histogram_combi_minus_v2.svg", dpi=300, width = 3, height = 2)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/local_minima_histogram_combi_minus_v2.pdf", dpi=300, width = 3, height = 2)
+
+```
+
+
+##stats with above the cutoff
+```{r}
+gDNA_reads$Condition <- factor(gDNA_reads$Condition, levels = c("Minus_Dox","24h_Dox"))
+
+gDNA_reads$Annotated_reads_log10 <- log10(gDNA_reads$Annotated_reads)
+gDNA_reads_sub <- gDNA_reads[(gDNA_reads$Condition == "24h_Dox" & gDNA_reads$Annotated_reads_log10 >3.66) |
+                             (gDNA_reads$Condition == "Minus_Dox" & gDNA_reads$Annotated_reads_log10 >3.56),
+                             ]
+gDNA_reads_sub2 = gDNA_reads_sub[gDNA_reads_sub$DCM_UMI_WG > 1,]
+gDNA_reads_sub2_plus = gDNA_reads_sub2[gDNA_reads_sub2$Condition == "24h_Dox",]
+gDNA_reads_sub2_minus = gDNA_reads_sub2[gDNA_reads_sub2$Condition == "Minus_Dox",]
+
+ggplot(gDNA_reads_sub2, aes(x =log10(Aligned_reads), y =  log10(CpG_noDup), color=Condition)) +
+  geom_point()+
+geom_abline(slope = 1,             # 45-degree line (y = x)
+    intercept = 0,         # Start at origin (0,0)
+    color = "black",         # Line color
+    linetype = "dashed",   # Line style (solid/dashed/dotted)
+    linewidth = 0.5        # Line thickness
+  )+
+  scale_color_manual(values = c("#A50F15","#377EB8"))+
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2)) +
+  labs(
+    title = "",
+    y = "Log10(CpG Unique Reads)",
+    x = "Log10(Mapped reads)")+
+  ylim(0,7)+
+  xlim(0,7)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/DCM_unique_against_aligned_combi_mESC_V2.png", dpi=300, width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/CpG_unique_against_aligned_combi_mESC_V2.png", dpi=300, width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/CpG_unique_against_aligned_combi_mESC_V2.svg", dpi=300, width = 3.5, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/DCM_unique_against_aligned_combi_mESC_V2.svg", dpi=300, width = 3.5, height = 3)
+
+model <- lm(log10(DCM_noDup) ~ log10(Aligned_reads), data = gDNA_reads_sub2_plus)
+model_minus <- lm(log10(DCM_noDup) ~ log10(Aligned_reads), data = gDNA_reads_sub2_minus)
+
+summary(model)
+summary(model_minus)
+
+summary(gDNA_reads_sub2$DCM_unique_P)
+
+summary(gDNA_reads_sub2$Annotated_reads)
+
+#umi VS GENES
+
+ggplot(gDNA_reads_sub, aes(x = DCM_UMI_WG, y = Genes_WG)) +
+  geom_point(aes(color = Condition), size = 2) +  # Color by condition, adjust size
+  scale_color_manual(values = c("#A50F15", "#377EB8"),  # Explicit color mapping
+                     name = "Dox") +  # Legend labels
+  geom_abline(intercept = 300, slope = 0, linetype = "dashed", color = "black") +  # Horizontal line at y=300
+  labs(
+    title = "",
+    y = "Genes",
+    x = "DCM counts"
+  )+
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/DCM_unique_against_genes_threshold_percondition_V2.png", dpi=300, width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/DCM_unique_against_genes_threshold_percondition_V2.svg", dpi=300, width = 3, height = 3)
+
+summary(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox" & gDNA_reads_sub$Genes_WG > 300,]$DCM_noDup)
+summary(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox" & gDNA_reads_sub$Genes_WG > 300,]$CpG_noDup)
+
+summary(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox" & gDNA_reads_sub$Genes_WG > 300,])
+gDNA_reads_sub$DCM_unique_P <- as.numeric(gDNA_reads_sub$DCM_unique_P)
+gDNA_reads_sub$CpG_unique_P <- as.numeric(gDNA_reads_sub$CpG_unique_P)
+gDNA_reads_sub$DCM.CpG <- as.numeric(gDNA_reads_sub$DCM.CpG)
+
+#Aligned, Unique_P, DCM_CpG
+ggplot(gDNA_reads_sub, aes(x =Condition, y = Aligned_P, fill=Condition)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#A50F15","#377EB8"))+
+ theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2)) +
+  labs(
+    title = "",
+    y = "Aligned (%)",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/boxplot_aligned_percentage_V2.png", dpi=300, width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/boxplot_aligned_percentage_V2.svg", dpi=300, width = 3, height = 3)
+install.packages("yulab.utils")
+install.packages("ggbreak")
+
+library(ggbreak)
+ggplot(gDNA_reads_sub, aes(x =Condition, y = DCM.CpG, fill=Condition)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("#A50F15","#377EB8"))+
+  ylim(0,2)+
+ theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain", color="black"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5, color="black"),
+    axis.text = element_text(size = 11, angle = 0, face = "plain", hjust = 1, color="black"),
+    axis.title = element_text(size = 11, face = "plain", color="black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11, color="black"),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2)) +
+  labs(
+    title = "",
+    y = "DCM/CpG",
+    x = "")
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/Stats_counts/boxplot_DCM_CpG_ratio_V2.png", dpi=300, width = 3, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/boxplot_DCM_CpG_ratio_V2.pdf", dpi=300, width = 3, height = 3)
+
+#How it is calculated the amount of total reads per cell
+median(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox",]$Annotated_reads)
+
+#How it is calculated the max number of detected genes per condition
+aggregate(Genes_WG ~ Condition, data = gDNA_reads_sub, FUN = summary)
+aggregate(DCM_noDup ~ Condition, data = gDNA_reads_sub, FUN = summary)
+aggregate(CpG_noDup ~ Condition, data = gDNA_reads_sub, FUN = summary)
+aggregate(DCM.CpG ~ Condition, data = gDNA_reads_sub, FUN = summary)
+aggregate(DCM_unique_P ~ Condition, data = gDNA_reads_sub, FUN = summary)
+
+summary(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox" & gDNA_reads_sub$Genes_WG > 300,]$CpG_noDup)
+summary(gDNA_reads_sub[gDNA_reads_sub$Condition == "24h_Dox" & gDNA_reads_sub$Genes_WG > 300,]$DCM_noDup)
+
+```
+
+#Collision Rate
+
+```{r}
+combi_run5_collision <- read.csv("/media/erlantz/Erlantz/Run2_CI/Collision_rate/CI_whole_plotting_collision.csv", header = T, sep = "\t")
+
+
+combi_run5_collision <- combi_run5_collision %>%
+  mutate(species = case_when(
+    mouse_useful > 0.25 & human_useful > 0.25 ~ "collision",
+    mouse_useful > 0.25 & human_useful <= 0.25 ~ "Mouse",
+    mouse_useful <= 0.25 & human_useful > 0.25 ~ "Human",
+    mouse_useful <= 0.25 & human_useful <= 0.25 ~ "None"
+  ))
+ggplot(combi_run5_collision, aes(x = log10(All_reads), fill = species)) +
+  geom_histogram(position = "identity", alpha = 0.6, bins = 50, color = "black") +
+  scale_fill_manual(values = c("Mouse" = "#00441B", "Human" = "#000000","Collision" = "#999999", "NA" = "red")) +
+  labs(
+    title = "Distribution of raw reads by species",
+    x = "log10(Annotated Reads)",
+    y = "Count",
+    fill = "Dox"
+  ) +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 8, face = "bold"),
+    plot.title = element_text(size =8, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 8, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 8, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 1.2),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+############Mouse##########
+gDNA_ano_mouse <- combi_run5_collision[combi_run5_collision$species == "Mouse",]
+d <- density(log10(gDNA_ano_mouse$All_reads), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#00441B", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.50, size = 3) +
+  labs(
+    title = "Density of log10(Annotated Reads) with Local Minimum Mouse",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+   theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/collision/local_minima_histogram_combi_mouse.png", dpi=300, width = 5, height = 3)
+############HUMAN
+gDNA_ano_human <- combi_run5_collision[combi_run5_collision$species == "Human",]
+d <- density(log10(gDNA_ano_human$All_reads ), na.rm = TRUE)
+y <- d$y
+x <- d$x
+
+# Find where slope changes from decreasing to increasing (i.e., local minima)
+valley_indices <- which(diff(sign(diff(y))) == 2) + 1
+
+# Get valleys around x ≈ 3.5 to 4.5 (just before the second peak)
+target_valleys <- valley_indices[x[valley_indices] > 3 & x[valley_indices] < 4.5]
+
+# Extract the most likely valley
+cutoff_point <- x[target_valleys[which.min(y[target_valleys])]]
+print(paste("Cutoff at local minimum:", round(cutoff_point, 3)))
+
+cutoff_index <- target_valleys[which.min(y[target_valleys])]
+cutoff_x <- x[cutoff_index]
+cutoff_y <- y[cutoff_index]
+
+# Plot
+ggplot(data = data.frame(x = x, y = y), aes(x = x, y = y)) +
+  geom_line(color = "#000000", size = 1.2) +
+  geom_vline(xintercept = cutoff_x, linetype = "dashed", color = "red", size = 1) +
+  geom_point(aes(x = cutoff_x, y = cutoff_y), color = "red", size = 3) +
+  annotate("text", x = cutoff_x, y = cutoff_y + 0.0005,
+           label = paste0("Cutoff ≈ ", round(cutoff_x, 2)),
+           color = "red", vjust = -2, hjust = -0.50, size = 3) +
+  labs(
+    title = "Density of log10(Annotated Reads) with Local Minimum Human",
+    x = "log10(Annotated Reads)",
+    y = "Density"
+  ) +
+   theme(strip.background = element_blank(), strip.text = element_text(size=8, face="bold"), plot.title = element_text(size=8, face="bold",hjust = 0.5), axis.text=element_text(size=8, angle = 45, face="bold", colour = "black", hjust = 1),
+        axis.title=element_text(size=8,face="bold"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1.2),legend.text = element_text(size=8), legend.title = element_text(face="bold",size=8))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/collision/local_minima_histogram_combi_human.png", dpi=300, width = 5, height = 3)
+
+
+
+combi_run5_collision$Annotated_reads_log10 <- log10(combi_run5_collision$All_reads)
+combi_run5_collision_sub <- combi_run5_collision[
+  (combi_run5_collision$species == "Mouse" & combi_run5_collision$Annotated_reads_log10 > 3.67) |
+  (combi_run5_collision$species == "Human" & combi_run5_collision$Annotated_reads_log10 > 4.39) |
+  (combi_run5_collision$species == "None"  & combi_run5_collision$Annotated_reads_log10 > 3.67 ) |
+    (combi_run5_collision$species == "collision"  & combi_run5_collision$Annotated_reads_log10 > 3.67 ),
+]
+
+
+subset(combi_run5_collision,All_reads > 10000)
+
+combi_run5_collision_sub <- combi_run5_collision_sub %>%
+  mutate(species_class = ifelse(human_useful > 0.25 & mouse_useful < 0.25, "Human",
+                         ifelse(human_useful < 0.25 & mouse_useful > 0.25, "Mouse",
+                         ifelse(human_useful > 0.25 & mouse_useful > 0.25, "Collision",
+                                "None"))))
+
+
+ggplot(combi_run5_collision_sub , aes(x=human_useful, y =mouse_useful, colour = species_class))+
+   geom_point(aes(color = ifelse(human_useful > 0.25 & mouse_useful < 0.25, "Human",
+                                ifelse(human_useful < 0.25 & mouse_useful > 0.25, "Mouse",
+                                       ifelse(human_useful > 0.25 & mouse_useful > 0.25, "Collision",
+                                              "None")))), show.legend = F) +
+  geom_vline(xintercept = 0.25, yintercept = 0.25, linetype = "dashed") +
+  geom_hline(yintercept = 0.25, linetype = "dashed") +
+  scale_color_manual(values = hex_colors4)+
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/collision/collision_rate_applying local_minima.png", dpi=300, width = 5, height = 3)
+
+p <- ggplot(combi_run5_collision_sub , aes(x=human_useful, y =mouse_useful, colour = species_class))+
+   geom_point() +
+  geom_vline(xintercept = 0.25, yintercept = 0.25, linetype = "dashed") +
+  geom_hline(yintercept = 0.25, linetype = "dashed") +
+  scale_color_manual(values = hex_colors4)+
+  labs(x= "Human DCM+CpG reads/raw reads",
+       y = "Mouse DCM+CpG reads/raw reads")+
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.5),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(face = "plain", size = 11),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+p_nolegend <- p + theme(legend.position = "none")
+
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/collision/collision_rate_applying local_minima_V2.png",p_nolegend, dpi=300, width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/collision_rate_applying local_minima_V2.svg",p, dpi=300, width = 6, height = 4)
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/collision/collision_rate_applying local_minima_V2_legend.png",legend_combined, dpi=300,width = 6, height = 0.3)
+```
+
+
+#Motif Analysis
+##No minus dox background
+```{r}
+motifs <- read.delim("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/MACS2_peaks/Homer_motif_enhancers_minusbg/knownResults.txt", stringsAsFactors = FALSE)
+
+colnames(motifs) <- c("Motif_Name","Motif_Name2","Tool","Consensus","P.value","Log_P.value","q.value","Target.Sequences.with.Motif.of.70","Target.Sequences.with.Motif","Background.Sequences.with.Motif.of.45757","Background.Sequences.with.Motif")
+# Optional: simplify and filter
+library(dplyr)
+highlight_TFs <- c("Nanog", "Sox2", "Oct4", "Klf4", "NANOG","SOX2","KLF4","MYC")
+pattern <- paste(highlight_TFs, collapse = "|") 
+top_motifs <- motifs %>%
+  dplyr::select(Motif_Name, P.value, Log_P.value, q.value, Consensus,Target.Sequences.with.Motif) %>%
+  arrange(q.value) %>%
+  slice_head(n = 100) %>%
+  mutate(
+    Highlight = ifelse(grepl(pattern, Motif_Name, ignore.case = TRUE), "Pluripotency TFs", "Other"),
+    Display.Label = ifelse(Highlight == "Pluripotency TFs",Motif_Name, "")  # only label selected
+  )
+
+
+top_motifs2 <- top_motifs[top_motifs$Log_P.value < -1.3,]
+# Plot
+ggplot(top_motifs2, aes(x =  reorder(Motif_Name, Log_P.value), y = Log_P.value, fill = Highlight)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete(labels = top_motifs2$Display.Label) +  # selectively show labels
+  coord_flip() +
+  scale_fill_manual(values = c("Pluripotency TFs" = "#e31a1c", "Other" = "#a6cee3")) +
+  labs(
+    title = "Motif Enrichment",
+    x = "",
+    y = "-log10(FDR)"
+  ) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 8, face = "bold"),
+    plot.title = element_text(size =8, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 8, angle = 45, face = "bold", hjust = 1),
+    axis.title = element_text(size = 8, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.8),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold", size = 8),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 2))
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/motif_analysis/motif_analyis_homer_enhancer_regions_DCM_peaks_FDRsig_V2.png", dpi=300, width = 6, height = 4)
+
+```
+
+##With minus dox background
+```{r}
+motifs_bg <- read.delim("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/MACS2_peaks/homer_motif_background_minus/knownResults.txt", stringsAsFactors = FALSE)
+
+colnames(motifs_bg) <- c("Motif_Name","Motif_Name2","Tool","Consensus","P.value","Log_P.value","q.value","Target.Sequences.with.Motif.of.70","Target.Sequences.with.Motif","Background.Sequences.with.Motif.of.45757","Background.Sequences.with.Motif")
+# Optional: simplify and filter
+library(dplyr)
+highlight_TFs <- c("Nanog", "Sox2", "Oct4", "Klf4", "NANOG","SOX2","KLF4")
+pattern <- paste(highlight_TFs, collapse = "|") 
+top_motifs_bg <- motifs_bg %>%
+  dplyr::select(Motif_Name, P.value, Log_P.value, q.value, Consensus,Target.Sequences.with.Motif) %>%
+  arrange(q.value) %>%
+  slice_head(n = 100) %>%
+  mutate(
+    Highlight = ifelse(grepl(pattern, Motif_Name, ignore.case = TRUE), "Pluripotency TFs", "Other"),
+    Display.Label = ifelse(Highlight == "Pluripotency TFs",Motif_Name, "")  # only label selected
+  )
+
+
+top_motifs_bg2 <- top_motifs_bg[top_motifs_bg$Log_P.value < -1.3,]
+top_motifs_bg2$Display.Label[38] <- "Oct4-Sox2-Tcf-Nanog"
+top_motifs_bg2$Display.Label[64] <- "Klf4"
+top_motifs_bg2$Display.Label[71] <- "Sox2"
+top_motifs_bg2_unique <- top_motifs_bg2[!duplicated(top_motifs_bg2$Motif_Name), ]
+top_motifs_bg2_unique$Motif_Name <- factor(top_motifs_bg2_unique$Motif_Name, levels = top_motifs_bg2_unique$Motif_Name)
+
+# Plot
+p <- ggplot(top_motifs_bg2_unique, aes(x =  -Log_P.value , y = reorder(Motif_Name, Log_P.value), fill = Highlight)) +
+  geom_bar(stat = "identity") +
+  scale_y_discrete(labels = top_motifs_bg2_unique$Display.Label) +  # selectively show labels
+  coord_flip() +
+  scale_fill_manual(values = c("Pluripotency TFs" = "#e31a1c", "Other" = "#a6cee3")) +
+  labs(
+    title = "Motif Enrichment",
+    x = "-log10(P-value)",
+    y = ""
+  ) +
+   theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 11, face = "plain"),
+    plot.title = element_text(size =11, face = "plain", hjust = 0.5),
+    axis.text = element_text(size = 11, angle = 45, face = "plain", hjust = 1),
+    axis.title = element_text(size = 11, face = "plain"),
+     axis.ticks.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black", size = 0.8),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.box = "horizontal",
+    legend.key.size = unit(0.2, "cm"),   # overall size
+    legend.key.width = unit(0.2, "cm"),  # width
+    legend.key.height = unit(0.2, "cm"))+
+    guides(fill= guide_legend(nrow = 1))
+
+g <- ggplotGrob(p)
+
+# Extract all legend boxes
+legends <- g$grobs[which(sapply(g$grobs, function(x) x$name) == "guide-box")]
+
+# Save each legend manually (they're stacked in one box)
+legend_combined <- legends[[1]]  # Usually contains both
+
+
+# Remove legend from plot
+p_nolegend <- p + theme(legend.position = "none")
+
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/motif_analysis/motif_analyis_homer_enhancer_regions_overlap_with_plusDCMsites_usingminusdoxasbg_FDRsig_legend_V2.png", legend_combined,dpi=300, width = 3, height = 0.4)
+
+ggsave("/media/erlantz/71DE167A75E99BB4/combinatorial_indexing_chapter/Run2_ESC_MEFs/motif_analysis/motif_analyis_homer_enhancer_regions_overlap_with_plusDCMsites_usingminusdoxasbg_FDRsig_V2.png",p_nolegend ,dpi=300, width = 4, height = 3)
+ggsave("/media/erlantz/71DE167A75E99BB4/Thesis/chapter_2/Plots/Figure1/illustrator/motif_analyis_homer_enhancer_regions_overlap_with_plusDCMsites_usingminusdoxasbg_FDRsig_V2.svg",p,dpi=300, width = 4, height = 3)
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
